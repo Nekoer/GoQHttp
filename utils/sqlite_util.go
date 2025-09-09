@@ -1,0 +1,454 @@
+package utils
+
+import (
+	"database/sql"
+	"errors"
+	"fmt"
+	"log"
+	"reflect"
+	"time"
+
+	_ "github.com/mattn/go-sqlite3"
+)
+
+// SQLite3Util 工具类
+type SQLite3Util struct {
+	db          *sql.DB
+	dbPath      string
+	MaxIdle     int           // 最大空闲连接数
+	MaxOpen     int           // 最大打开连接数
+	MaxLifetime time.Duration // 连接最大生命周期
+}
+
+// Options 初始化选项
+type Options struct {
+	DBPath      string
+	MaxIdle     int
+	MaxOpen     int
+	MaxLifetime time.Duration
+}
+
+type TencentGroup struct {
+	ID          int    `db:"id"`
+	GroupId     string `db:"group_id"`
+	GroupOpenid string `db:"group_openid"`
+}
+
+type TencentAuthor struct {
+	ID           int    `db:"id"`
+	AuthorId     string `db:"author_id"`
+	MemberOpenid string `db:"member_openid"`
+}
+
+var DBUtil *SQLite3Util
+
+// DefaultOptions 默认选项
+var DefaultOptions = Options{
+	DBPath:      ":memory:",
+	MaxIdle:     10,
+	MaxOpen:     100,
+	MaxLifetime: time.Hour,
+}
+
+// NewSQLite3Util 工具实例
+func NewSQLite3Util(options Options) (*SQLite3Util, error) {
+	db, err := sql.Open("sqlite3", options.DBPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open database: %v", err)
+	}
+
+	// 设置连接池参数
+	db.SetMaxIdleConns(options.MaxIdle)
+	db.SetMaxOpenConns(options.MaxOpen)
+	db.SetConnMaxLifetime(options.MaxLifetime)
+
+	// 测试连接
+	if err = db.Ping(); err != nil {
+		return nil, fmt.Errorf("failed to ping database: %v", err)
+	}
+
+	return &SQLite3Util{
+		db:          db,
+		dbPath:      options.DBPath,
+		MaxIdle:     options.MaxIdle,
+		MaxOpen:     options.MaxOpen,
+		MaxLifetime: options.MaxLifetime,
+	}, nil
+}
+
+// Close 关闭数据库连接
+func (s *SQLite3Util) Close() error {
+	if s.db != nil {
+		return s.db.Close()
+	}
+	return nil
+}
+
+// GetDB 获取数据库连接实例
+func (s *SQLite3Util) GetDB() *sql.DB {
+	return s.db
+}
+
+// Exec 执行非查询SQL (创建表、插入、更新、删除等)
+func (s *SQLite3Util) Exec(sqlStr string, args ...interface{}) (sql.Result, error) {
+	if s.db == nil {
+		return nil, errors.New("database is not initialized")
+	}
+
+	stmt, err := s.db.Prepare(sqlStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare statement: %v", err)
+	}
+	defer stmt.Close()
+
+	result, err := stmt.Exec(args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute statement: %v", err)
+	}
+
+	return result, nil
+}
+
+// Query 执行查询SQL
+func (s *SQLite3Util) Query(sqlStr string, args ...interface{}) (*sql.Rows, error) {
+	if s.db == nil {
+		return nil, errors.New("database is not initialized")
+	}
+
+	stmt, err := s.db.Prepare(sqlStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare statement: %v", err)
+	}
+	defer stmt.Close()
+
+	rows, err := stmt.Query(args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query: %v", err)
+	}
+
+	return rows, nil
+}
+
+// QueryRow 查询单行
+func (s *SQLite3Util) QueryRow(sqlStr string, args ...interface{}) *sql.Row {
+	if s.db == nil {
+		return nil
+	}
+
+	return s.db.QueryRow(sqlStr, args...)
+}
+
+// Insert 插入数据并返回最后插入的ID
+func (s *SQLite3Util) Insert(sqlStr string, args ...interface{}) (int64, error) {
+	result, err := s.Exec(sqlStr, args...)
+	if err != nil {
+		return 0, err
+	}
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get last insert id: %v", err)
+	}
+
+	return id, nil
+}
+
+// Update 更新数据并返回受影响的行数
+func (s *SQLite3Util) Update(sqlStr string, args ...interface{}) (int64, error) {
+	result, err := s.Exec(sqlStr, args...)
+	if err != nil {
+		return 0, err
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get affected rows: %v", err)
+	}
+
+	return rows, nil
+}
+
+// Delete 删除数据并返回受影响的行数
+func (s *SQLite3Util) Delete(sqlStr string, args ...interface{}) (int64, error) {
+	return s.Update(sqlStr, args...)
+}
+
+// Begin 开始事务
+func (s *SQLite3Util) Begin() (*sql.Tx, error) {
+	if s.db == nil {
+		return nil, errors.New("database is not initialized")
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %v", err)
+	}
+
+	return tx, nil
+}
+
+// Transaction 执行事务
+func (s *SQLite3Util) Transaction(f func(tx *sql.Tx) error) error {
+	tx, err := s.Begin()
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		if p := recover(); p != nil {
+			tx.Rollback()
+			panic(p) // 重新抛出panic
+		}
+	}()
+
+	err = f(tx)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	return tx.Commit()
+}
+
+// TableExists 检查表是否存在
+func (s *SQLite3Util) TableExists(tableName string) (bool, error) {
+	sqlStr := "SELECT name FROM sqlite_master WHERE type='table' AND name=?"
+	row := s.QueryRow(sqlStr, tableName)
+
+	var name string
+	err := row.Scan(&name)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, err
+	}
+
+	return true, nil
+}
+
+// GetTableSchema 获取表结构信息
+func (s *SQLite3Util) GetTableSchema(tableName string) ([]map[string]interface{}, error) {
+	sqlStr := fmt.Sprintf("PRAGMA table_info(%s)", tableName)
+	rows, err := s.Query(sqlStr)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	columns, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+
+	var result []map[string]interface{}
+	for rows.Next() {
+		values := make([]interface{}, len(columns))
+		valuePtrs := make([]interface{}, len(columns))
+		for i := range values {
+			valuePtrs[i] = &values[i]
+		}
+
+		if err := rows.Scan(valuePtrs...); err != nil {
+			return nil, err
+		}
+
+		rowMap := make(map[string]interface{})
+		for i, col := range columns {
+			val := values[i]
+			if b, ok := val.([]byte); ok {
+				rowMap[col] = string(b)
+			} else {
+				rowMap[col] = val
+			}
+		}
+		result = append(result, rowMap)
+	}
+
+	return result, nil
+}
+
+// QueryToStructs 将查询结果映射到结构体切片 (需要结构体字段使用tag `db:"column_name"`)
+func (s *SQLite3Util) QueryToStructs(dest interface{}, sqlStr string, args ...interface{}) error {
+	destValue := reflect.ValueOf(dest)
+	if destValue.Kind() != reflect.Ptr || destValue.Elem().Kind() != reflect.Slice {
+		return errors.New("dest must be a pointer to a slice")
+	}
+
+	sliceValue := destValue.Elem()
+	elementType := sliceValue.Type().Elem()
+
+	rows, err := s.Query(sqlStr, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	columns, err := rows.Columns()
+	if err != nil {
+		return err
+	}
+
+	for rows.Next() {
+		// 创建新元素
+		elem := reflect.New(elementType).Elem()
+
+		// 准备扫描值的切片
+		values := make([]interface{}, len(columns))
+		for i := range values {
+			fieldIndex := -1
+			// 查找匹配的字段
+			for j := 0; j < elementType.NumField(); j++ {
+				field := elementType.Field(j)
+				tag := field.Tag.Get("db")
+				if tag == columns[i] {
+					fieldIndex = j
+					break
+				}
+			}
+
+			if fieldIndex >= 0 {
+				values[i] = elem.Field(fieldIndex).Addr().Interface()
+			} else {
+				// 如果没有匹配的字段，使用空接口
+				values[i] = new(interface{})
+			}
+		}
+
+		if err := rows.Scan(values...); err != nil {
+			return err
+		}
+
+		sliceValue.Set(reflect.Append(sliceValue, elem))
+	}
+
+	return rows.Err()
+}
+
+func SqLiteInit() {
+	// 初始化数据库连接
+	dbUtil, err := NewSQLite3Util(Options{
+		DBPath:      "./sqlite.db",
+		MaxIdle:     10,
+		MaxOpen:     100,
+		MaxLifetime: time.Hour,
+	})
+	DBUtil = dbUtil
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer dbUtil.Close()
+
+	// 创建表
+	createTableSQL := `
+	CREATE TABLE IF NOT EXISTS TencentGroup (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		group_id TEXT NOT NULL,
+		group_openid TEXT NOT NULL
+	)
+	`
+	_, err = dbUtil.Exec(createTableSQL)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	createTableSQL = `
+	CREATE TABLE IF NOT EXISTS TencentAuthor (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		member_openid TEXT NOT NULL,
+		author_id TEXT NOT NULL
+	)
+	`
+	_, err = dbUtil.Exec(createTableSQL)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+// ExampleUsage 示例使用
+func ExampleUsage() {
+	// 初始化数据库连接
+	dbUtil, err := NewSQLite3Util(Options{
+		DBPath:      "./sqlite.db",
+		MaxIdle:     10,
+		MaxOpen:     100,
+		MaxLifetime: time.Hour,
+	})
+	DBUtil = dbUtil
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer dbUtil.Close()
+
+	// 创建表
+	createTableSQL := `
+	CREATE TABLE IF NOT EXISTS TencentGroup (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		group_id TEXT NOT NULL,
+		group_openid TEXT NOT NULL
+	)
+	`
+
+	_, err = dbUtil.Exec(createTableSQL)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	createTableSQL = `
+	CREATE TABLE IF NOT EXISTS TencentAuthor (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		member_openid TEXT NOT NULL,
+		author_id TEXT NOT NULL
+	)
+	`
+
+	_, err = dbUtil.Exec(createTableSQL)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// 插入数据
+	//insertSQL := "INSERT INTO users (name, email) VALUES (?, ?)"
+	//id, err := dbUtil.Insert(insertSQL, "John Doe", "john@example.com")
+	//if err != nil {
+	//	log.Fatal(err)
+	//}
+	//fmt.Printf("Inserted user with ID: %d\n", id)
+	//
+	//// 查询数据
+	//type User struct {
+	//	ID        int    `db:"id"`
+	//	Name      string `db:"name"`
+	//	Email     string `db:"email"`
+	//	CreatedAt string `db:"created_at"`
+	//}
+	//
+	//var users []User
+	//querySQL := "SELECT * FROM users WHERE name = ?"
+	//err = dbUtil.QueryToStructs(&users, querySQL, "John Doe")
+	//if err != nil {
+	//	log.Fatal(err)
+	//}
+	//
+	//for _, user := range users {
+	//	fmt.Printf("User: %+v\n", user)
+	//}
+	//
+	//// 使用事务
+	//err = dbUtil.Transaction(func(tx *sql.Tx) error {
+	//	// 在事务中执行多个操作
+	//	_, err := tx.Exec("UPDATE users SET name = ? WHERE id = ?", "John Updated", id)
+	//	if err != nil {
+	//		return err
+	//	}
+	//
+	//	_, err = tx.Exec("INSERT INTO users (name, email) VALUES (?, ?)", "Jane Doe", "jane@example.com")
+	//	return err
+	//})
+
+	if err != nil {
+		log.Fatal("Transaction failed:", err)
+	}
+
+	fmt.Println("Transaction completed successfully")
+}
