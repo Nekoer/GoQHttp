@@ -7,6 +7,7 @@ import (
 	"GoQHttp/utils"
 	"GoQHttp/websocket"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"time"
@@ -66,7 +67,7 @@ func main() {
 
 	// 初始化日志
 	if err := initLogger(configuration); err != nil {
-		logger.Warnf("初始化日志失败: %v", err)
+		fmt.Errorf("初始化日志失败: %v", err)
 	}
 	defer func() {
 		if logFile != nil {
@@ -83,17 +84,19 @@ func main() {
 	// 设置 HTTP 路由
 	http.HandleFunc("/health", healthHandler)
 
-	if configuration.Bot.QQ.WebhookPath != "" {
+	if configuration.Bot.QQ.WebhookPath != "" && configuration.Bot.QQ.Secret != "" && configuration.Bot.QQ.Id != 0 && configuration.Bot.QQ.Uid != 0 && configuration.Bot.QQ.Token != "" && configuration.Bot.QQ.ScopeType != "" {
+		err := TencentClient.Init(configuration.Bot.QQ.Id, configuration.Bot.QQ.Secret, configuration.Bot.QQ.Sandbox)
+		if err != nil {
+			logger.Errorf("GetAppAccessToken err: %v", err)
+			return
+		}
+
 		http.HandleFunc(configuration.Bot.QQ.WebhookPath, webhookHandler)
 		go tencent.HandlerEvent()
 	}
 
 	if len(configuration.Channels) > 0 {
-		err := TencentClient.Init(configuration.Bot.QQ.Id, configuration.Bot.QQ.Secret, false)
-		if err != nil {
-			logger.Errorf("GetAppAccessToken err: %v", err)
-			return
-		}
+
 		for _, channel := range configuration.Channels {
 			logger.Infof("%+v", channel)
 			if channel.WSReverse != nil {
