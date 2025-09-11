@@ -1,0 +1,29 @@
+# Webhook 服务器配置
+server:
+  port: 8080
+  timeout: 30
+bot:
+  qq:
+    id: appid
+    uid: qq
+    secret: secret
+    token: token
+    type: public
+    sandbox: false
+    webhook_path: /qq
+  telegram:
+    token: token
+# 日志配置
+logging:
+  level: debug
+  file_path: ./webhook.log
+  add_source: true
+  json: false
+channels:
+  - ws-reverse:
+      universal: "url"
+      reconnect-interval: 3000
+      authorization:
+  - ws:
+      address: 0.0.0.0:8080
+      authorization:
