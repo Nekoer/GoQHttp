@@ -2,11 +2,14 @@ package websocket
 
 import (
 	"GoQHttp/logger"
+	"GoQHttp/onebot"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,6 +20,8 @@ import (
 // Client 表示一个 WebSocket 客户端连接
 type Client struct {
 	ID            string
+	AppId         int
+	Secret        string
 	URL           string
 	Conn          gowebsocket.Socket
 	mu            sync.Mutex
@@ -28,6 +33,7 @@ type Client struct {
 	XClientRole   string
 	Authorization string
 	Interval      int64
+	Sandbox       bool
 }
 
 // ClientManager 管理多个 WebSocket 客户端连接
@@ -72,9 +78,9 @@ const (
 
 // MessageBase 定义消息结构
 type MessageBase struct {
-	Time     int64    `json:"time"`
-	SelfId   int64    `json:"self_id"`
-	PostType PostType `json:"post_type"`
+	Time     int64    `json:"time,omitempty"`
+	SelfId   int64    `json:"self_id,omitempty"`
+	PostType PostType `json:"post_type,omitempty"`
 }
 
 type SubType string
@@ -86,6 +92,7 @@ const (
 	Friend  SubType = "friend"
 	Group   SubType = "group"
 	Other   SubType = "other"
+	Normal  SubType = "normal"
 )
 
 type MetaEventType string
@@ -137,37 +144,54 @@ const (
 )
 
 type Sender struct {
-	UserId   int64  `json:"user_id,omitempty"`
-	NickName string `json:"nick_name,omitempty"`
-	Sex      Sex    `json:"sex,omitempty"`
-	Age      int32  `json:"age,omitempty"`
-	Card     string `json:"card,omitempty"`
-	Area     string `json:"area,omitempty"`
-	Level    string `json:"level,omitempty"`
-	Role     Role   `json:"role,omitempty"`
-	Title    string `json:"title,omitempty"`
+	UserId   int64  `json:"user_id"`
+	NickName string `json:"nick_name"`
+	Sex      Sex    `json:"sex"`
+	Age      int32  `json:"age"`
+	Card     string `json:"card"`
+	Area     string `json:"area"`
+	Level    string `json:"level"`
+	Role     Role   `json:"role"`
+	Title    string `json:"title"`
 }
 type Anonymous struct {
 	Id   int64  `json:"id,omitempty"`
 	Name string `json:"name,omitempty"`
 	Flag string `json:"flag,omitempty"`
 }
-type MessageResponse struct {
+type MessageRequest struct {
 	MessageBase
-	MessageType MessageType `json:"message_type"`
-	SubType     SubType     `json:"sub_type"`
-	MessageId   int32       `json:"message_id"`
-	GroupId     int32       `json:"group_id"`
-	UserId      int64       `json:"user_id"`
-	Anonymous   Anonymous   `json:"anonymous,omitempty"`
-	Message     []any       `json:"message"`
-	RawMessage  string      `json:"raw_message"`
-	Font        int32       `json:"font"`
-	Sender      Sender      `json:"sender"`
+	MessageType     MessageType       `json:"message_type"`
+	SubType         SubType           `json:"sub_type,omitempty"`
+	MessageId       int32             `json:"message_id,omitempty"`
+	GroupId         int32             `json:"group_id"`
+	UserId          int64             `json:"user_id"`
+	Anonymous       *Anonymous        `json:"anonymous,omitempty"`
+	OriginalMessage string            `json:"original_message,omitempty"`
+	Message         []*onebot.Element `json:"message"`
+	RawMessage      string            `json:"raw_message,omitempty"`
+	Font            int32             `json:"font,omitempty"`
+	Sender          Sender            `json:"sender,omitempty"`
+	AutoEscape      bool              `json:"auto_escape,omitempty"`
+}
+
+type Request struct {
+	Action string `json:"action"`
+	Params any    `json:"params"`
+	Echo   string `json:"echo"`
+}
+
+type Response struct {
+	Status  string `json:"status"`  // 执行状态，必须是 ok、failed 中的一个
+	Code    int64  `json:"retcode"` // 返回码
+	Data    any    `json:"data"`    // 响应数据
+	Message string `json:"message"` // 错误信息
+	Echo    any    `json:"echo"`    // 动作请求中的 echo 字段值
 }
 
 var (
-	Manager *ClientManager
+	Manager       *ClientManager
+	TencentClient *Tencent
 )
 
 func init() {
@@ -177,9 +201,11 @@ func init() {
 }
 
 // NewWebSocketClient 创建新的 WebSocket 客户端
-func NewWebSocketClient(url string, xSelfID int64, xClientRole string, authorization string, interval int64) *Client {
+func NewWebSocketClient(url string, xSelfID int64, appId int, secret string, xClientRole string, authorization string, interval int64, sandbox bool) *Client {
 	return &Client{
 		ID:            generateID(),
+		AppId:         appId,
+		Secret:        secret,
 		URL:           url,
 		Connected:     false,
 		Reconnect:     true,
@@ -189,6 +215,7 @@ func NewWebSocketClient(url string, xSelfID int64, xClientRole string, authoriza
 		XClientRole:   xClientRole,
 		Authorization: authorization,
 		Interval:      interval,
+		Sandbox:       sandbox,
 	}
 }
 
@@ -199,6 +226,11 @@ func generateID() string {
 
 // Connect 连接到 WebSocket 服务器
 func (c *Client) Connect() {
+	err := TencentClient.Init(c.AppId, c.Secret, false)
+	if err != nil {
+		logger.Errorf("GetAppAccessToken err: %v", err)
+		return
+	}
 	for {
 		if c.RetryCount >= c.MaxRetries && c.MaxRetries > 0 {
 			logger.Warnf("达到最大重试次数 (%d)，停止连接: %s", c.MaxRetries, c.URL)
@@ -303,52 +335,150 @@ func (c *Client) HeartBeat() {
 }
 
 func (c *Client) SendMessage(data string) {
+	c.mu.Lock()
+	logger.Debug(data)
 	c.Conn.SendText(data)
+	c.mu.Unlock()
+}
+
+func (c *Client) SendGroupMessage(data MessageRequest) {
+	c.mu.Lock()
+	TencentClient.SendGroupMessage(data)
+	c.mu.Unlock()
+}
+
+// CQCode 表示一个CQ码
+type CQCode struct {
+	Type   string            // CQ码类型，如"at", "image"
+	Params map[string]string // 参数字典
+	Raw    string            // 原始字符串
+}
+
+// ParseCQCode 解析CQ码字符串，返回CQCode结构体
+func ParseCQCode(s string) (*CQCode, error) {
+	// 匹配CQ码的正则表达式
+	pattern := `\[CQ:([^,\]]+)(?:,([^,\]]+=[^,\]]+))*\]`
+	re := regexp.MustCompile(pattern)
+
+	match := re.FindStringSubmatch(s)
+	if match == nil {
+		return nil, fmt.Errorf("无效的CQ码格式: %s", s)
+	}
+
+	cq := &CQCode{
+		Type:   match[1],
+		Params: make(map[string]string),
+		Raw:    s,
+	}
+
+	// 解析参数
+	if len(match) > 2 {
+		paramStr := match[2]
+		// 处理多个参数的情况
+		params := strings.Split(paramStr, ",")
+		for _, param := range params {
+			parts := strings.SplitN(param, "=", 2)
+			if len(parts) == 2 {
+				key := parts[0]
+				value := parts[1]
+				cq.Params[key] = value
+			}
+		}
+	}
+
+	return cq, nil
+}
+
+// ParseAllCQCodes 从文本中提取并解析所有CQ码
+func ParseAllCQCodes(text string) ([]*CQCode, error) {
+	pattern := `\[CQ:[^\]]+\]`
+	re := regexp.MustCompile(pattern)
+
+	matches := re.FindAllString(text, -1)
+	if matches == nil {
+		return nil, fmt.Errorf("未找到CQ码")
+	}
+
+	var cqCodes []*CQCode
+	for _, match := range matches {
+		cq, err := ParseCQCode(match)
+		if err != nil {
+			return nil, err
+		}
+		cqCodes = append(cqCodes, cq)
+	}
+
+	return cqCodes, nil
 }
 
 // handleMessage 处理接收到的消息
 func (c *Client) handleMessage(message []byte) {
-	var msg MessageResponse
-	err := json.Unmarshal(message, &msg)
+	var request Request
+	err := json.Unmarshal(message, &request)
 	if err != nil {
 		logger.Warnf("无法解析消息: %v", err)
 		return
 	}
 
+	var messageRequest MessageRequest
+	marshal, err := json.Marshal(request.Params)
+	if err != nil {
+		return
+	}
+
+	err = json.Unmarshal(marshal, &messageRequest)
+	if err != nil {
+		//messageRequest.Message
+		var messages []*onebot.Element
+
+		codes, err := ParseAllCQCodes(string(marshal))
+		if err != nil {
+			return
+		}
+
+		for _, code := range codes {
+			//logger.Debugf("%+v,%+v,%+v", code.Raw, code.Type, code.Params)
+			switch code.Type {
+			case "text":
+				{
+					text := code.Params["text"]
+					messages = append(messages, &onebot.Element{
+						ElementType: onebot.TextType,
+						Data: &onebot.Message{
+							Text: text,
+						},
+					})
+				}
+			case "image":
+				{
+					file := code.Params["file"]
+					messages = append(messages, &onebot.Element{
+						ElementType: onebot.ImageType,
+						Data: &onebot.Message{
+							Image: onebot.Image{
+								File: file,
+							},
+						},
+					})
+				}
+			}
+		}
+		messageRequest.Message = messages
+
+		logger.Errorf("%v,%v", len(messageRequest.Message), len(messages))
+	}
 	// 根据消息类型处理
-	switch msg.PostType {
-	case MessagePost:
-		logger.Infof("[%s] 消息事件: %s\n", c.URL, string(message))
+	switch messageRequest.PostType {
 	case NoticePost:
 		logger.Infof("[%s] 通知事件: %v\n", c.URL, string(message))
 	case RequestPost:
 		logger.Infof("[%s] 请求事件: %v\n", c.URL, string(message))
+	case MessagePost:
 	default:
-		logger.Infof("[%s] 元事件: %v\n", c.URL, string(message))
+		c.SendGroupMessage(messageRequest)
+		logger.Infof("[%s] 消息事件: %s\n", c.URL, string(message))
 	}
 }
-
-// SendMessage 发送消息到服务器
-//func (c *Client) SendMessage(msgType string, content interface{}) error {
-//	message := Message{
-//		Type:      msgType,
-//		Content:   content,
-//		Timestamp: time.Now(),
-//		Source:    c.ID,
-//	}
-//
-//	msgBytes, err := json.Marshal(message)
-//	if err != nil {
-//		return err
-//	}
-//
-//	select {
-//	case c.SendChan <- msgBytes:
-//		return nil
-//	default:
-//		return fmt.Errorf("发送通道已满")
-//	}
-//}
 
 // Close 关闭连接
 func (c *Client) Close() {

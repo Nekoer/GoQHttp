@@ -20,8 +20,8 @@ type CMD struct {
 }
 
 // ETLInput 清理输出
-//  - 去掉@结构
-//  - trim
+//   - 去掉@结构
+//   - trim
 func ETLInput(input string) string {
 	etlData := string(atRE.ReplaceAll([]byte(input), []byte("")))
 	etlData = strings.Trim(etlData, spaceCharSet)
@@ -30,13 +30,14 @@ func ETLInput(input string) string {
 
 // MentionUser 返回 at 用户的内嵌格式
 // https://bot.q.qq.com/wiki/develop/api/openapi/message/message_format.html
+
 func MentionUser(userID string) string {
-	return fmt.Sprintf("<@%s>", userID)
+	return fmt.Sprintf("<qqbot-at-user id=\"%s\" />", userID)
 }
 
 // MentionAllUser 返回 at all 的内嵌格式
 func MentionAllUser() string {
-	return "@everyone"
+	return "<qqbot-at-everyone />"
 }
 
 // MentionChannel 提到子频道的格式

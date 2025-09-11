@@ -94,9 +94,12 @@ func main() {
 				client := websocket.NewWebSocketClient(
 					channel.WSReverse.Universal,
 					int64(configuration.Bot.QQ.Uid),
+					configuration.Bot.QQ.Id,
+					configuration.Bot.QQ.Secret,
 					"Universal",
 					channel.WSReverse.Authorization,
 					channel.WSReverse.ReconnectInterval,
+					configuration.Bot.QQ.Sandbox,
 				)
 				websocket.Manager.AddClient(client)
 				go client.Connect()

@@ -2,11 +2,75 @@ package tencent
 
 import (
 	"GoQHttp/logger"
+	"GoQHttp/onebot"
 	"GoQHttp/protocol/tencent/dto"
+	"GoQHttp/utils"
 	"GoQHttp/websocket"
 	"encoding/json"
+	"fmt"
+	"regexp"
+	"strings"
 	"time"
 )
+
+// FaceTag 定义结构体来存储解析后的标签信息
+type FaceTag struct {
+	Type int
+	ID   string
+	Ext  string
+	Raw  string
+}
+
+// 辅助函数：将字符串转换为整数
+func parseInt(s string) int {
+	var result int
+	fmt.Sscanf(s, "%d", &result)
+	return result
+}
+
+// SplitByTags 将字符串按照 <> 标签分割成数组
+func SplitByTags(input string) []string {
+	input = strings.TrimPrefix(input, " ")
+	re := regexp.MustCompile(`(<[^>]+>|[^<]+)`)
+	matches := re.FindAllString(input, -1)
+
+	// 过滤空值
+	result := make([]string, 0)
+	for _, match := range matches {
+		if match != "" {
+			result = append(result, match)
+		}
+	}
+
+	return result
+}
+
+// 识别并解析 Face 标签
+func parseFaceTags(input string) bool {
+	// 正则表达式匹配特定的 face 标签格式
+	// 匹配模式: <faceType=数字,faceId="值",ext="base64字符串">
+	pattern := `<faceType=(\d+),faceId="([^"]+)",ext="([^"]+)">`
+	re := regexp.MustCompile(pattern)
+
+	matches := re.FindAllStringSubmatch(input, -1)
+
+	var tags []FaceTag
+	for _, match := range matches {
+		if len(match) < 4 {
+			continue
+		}
+
+		tag := FaceTag{
+			Type: parseInt(match[1]),
+			ID:   match[2],
+			Ext:  match[3],
+			Raw:  match[0],
+		}
+		tags = append(tags, tag)
+	}
+
+	return len(tags) > 0
+}
 
 func GroupAddRobotEventHandler(event *dto.Payload, data *dto.GroupAddRobotDataEvent) error {
 	logger.Infof("收到群添加机器人事件, 群号:%v", data.GroupOpenId)
@@ -37,23 +101,72 @@ func GroupAtMessageEventHandler(event *dto.Payload, data *dto.GroupATMessageData
 		logger.Infof("群消息: %+v", string(jsonBytes))
 	}
 
+	GroupId, err := utils.DBUtil.GroupInsert(data.GroupId, data.GroupOpenId)
+	if err != nil {
+		logger.Warnf("群维护失败: %v", err)
+		return err
+	}
+
+	SenderId, err := utils.DBUtil.SenderInsert(data.Author.UserOpenId, data.Author.UserId)
+	if err != nil {
+		logger.Warnf("群用户维护失败: %v", err)
+		return err
+	}
+
+	MessageId, err := utils.DBUtil.GroupMessageInsert(data.MsgId, GroupId, SenderId)
+	if err != nil {
+		logger.Warnf("群消息维护失败: %v", err)
+		return err
+	}
+
+	tmpMessage := SplitByTags(data.Content)
+	// 构建消息体
+	var messages []*onebot.Element
+	var rawMessages []string
+	var imageIndex = 0
+	for _, message := range tmpMessage {
+		if parseFaceTags(message) {
+			image := onebot.Image{
+				File: data.Attachments[imageIndex].URL,
+				Url:  data.Attachments[imageIndex].URL,
+			}
+			messages = append(messages, &onebot.Element{
+				ElementType: onebot.ImageType,
+				Data: &onebot.Message{
+					Image: image,
+				},
+			})
+			imageIndex += 1
+			rawMessages = append(rawMessages, image.String())
+		} else {
+			messages = append(messages, &onebot.Element{
+				ElementType: onebot.TextType,
+				Data: &onebot.Message{
+					Text: message,
+				},
+			})
+			rawMessages = append(rawMessages, message)
+		}
+	}
+	rawMessage := strings.Join(rawMessages, "")
 	for _, client := range websocket.Manager.GetAllClients() {
-		messageResponse := websocket.MessageResponse{
+		messageRequest := websocket.MessageRequest{
 			MessageBase: websocket.MessageBase{
 				Time:     time.Now().Unix(),
 				SelfId:   client.XSelfID,
 				PostType: websocket.MessagePost,
 			},
-			MessageType: websocket.GroupMessage,
-			SubType:     websocket.Group,
-			MessageId:   0,
-			GroupId:     0,
-			UserId:      0,
-			Message:     []any{},
-			RawMessage:  data.Content,
-			Font:        0,
+			MessageType:     websocket.GroupMessage,
+			SubType:         websocket.Normal,
+			MessageId:       MessageId,
+			GroupId:         GroupId,
+			UserId:          SenderId,
+			OriginalMessage: string(event.RawMessage),
+			Message:         messages,
+			RawMessage:      rawMessage,
+			Font:            1,
 			Sender: websocket.Sender{
-				UserId:   0,
+				UserId:   SenderId,
 				NickName: "",
 				Sex:      "",
 				Age:      0,
@@ -65,7 +178,7 @@ func GroupAtMessageEventHandler(event *dto.Payload, data *dto.GroupATMessageData
 			},
 		}
 
-		jsonData, err := json.Marshal(messageResponse)
+		jsonData, err := json.Marshal(messageRequest)
 		if err != nil {
 			return err
 		}

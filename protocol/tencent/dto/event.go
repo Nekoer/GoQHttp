@@ -48,7 +48,7 @@ const (
 	EventC2CMsgReceive         EventType = "C2C_MSG_RECEIVE"
 )
 
-// WSPayload websocket 消息结构
+// Payload websocket 消息结构
 type Payload struct {
 	PayloadBase
 	Data       interface{} `json:"d,omitempty"`

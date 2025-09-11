@@ -29,15 +29,22 @@ type Options struct {
 }
 
 type TencentGroup struct {
-	ID          int    `db:"id"`
+	ID          int32  `db:"id"`
 	GroupId     string `db:"group_id"`
 	GroupOpenid string `db:"group_openid"`
 }
 
 type TencentAuthor struct {
-	ID           int    `db:"id"`
+	ID           int64  `db:"id"`
 	AuthorId     string `db:"author_id"`
 	MemberOpenid string `db:"member_openid"`
+}
+type TencentGroupMessage struct {
+	ID           int32  `db:"id"`
+	SelfGroupId  int32  `db:"self_group_id"`
+	SelfSenderId int64  `db:"self_sender_id"`
+	MessageId    string `db:"message_id"`
+	TimeStamp    int    `db:"time_stamp"`
 }
 
 var DBUtil *SQLite3Util
@@ -337,7 +344,7 @@ func SqLiteInit() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer dbUtil.Close()
+	//defer dbUtil.Close()
 
 	// 创建表
 	createTableSQL := `
@@ -363,6 +370,106 @@ func SqLiteInit() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	createTableSQL = `
+	CREATE TABLE IF NOT EXISTS TencentGroupMessage (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		message_id TEXT NOT NULL,
+		self_group_id  INTEGER NOT NULL,
+	    self_sender_id INTEGER NOT NULL,
+		time_stamp INTEGER NOT NULL 
+	)
+	`
+	_, err = dbUtil.Exec(createTableSQL)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func (s *SQLite3Util) GroupInsert(groupId string, groupOpenId string) (int32, error) {
+	selectSQL := "SELECT * FROM TencentGroup WHERE group_id = ? AND group_openid = ?"
+	var tgs []TencentGroup
+	err := s.QueryToStructs(&tgs, selectSQL, groupId, groupOpenId)
+	if tgs != nil {
+		return tgs[0].ID, err
+	}
+
+	insertSQL := "INSERT INTO TencentGroup (group_id, group_openid) VALUES (?, ?)"
+	id, err := s.Insert(insertSQL, groupId, groupOpenId)
+
+	if err != nil {
+		return 0, err
+	}
+
+	return int32(id), nil
+}
+func (s *SQLite3Util) SenderInsert(memberOpenId string, authorId string) (int64, error) {
+	selectSQL := "SELECT * FROM TencentAuthor WHERE member_openid = ? AND author_id = ?"
+	var tas []TencentAuthor
+	err := s.QueryToStructs(&tas, selectSQL, memberOpenId, authorId)
+	if tas != nil {
+		return tas[0].ID, err
+	}
+
+	insertSQL := "INSERT INTO TencentAuthor (member_openid, author_id) VALUES (?, ?)"
+	id, err := s.Insert(insertSQL, memberOpenId, authorId)
+
+	if err != nil {
+		return 0, err
+	}
+
+	return id, nil
+}
+func (s *SQLite3Util) GroupMessageInsert(messageId string, selfGroupId int32, selfSenderId int64) (int32, error) {
+	selectSQL := "SELECT * FROM TencentGroupMessage WHERE message_id = ? and self_group_id = ? AND self_sender_id = ?"
+	var tgms []TencentGroupMessage
+	err := s.QueryToStructs(&tgms, selectSQL, messageId, selfGroupId, selfSenderId)
+	if tgms != nil {
+		return tgms[0].ID, err
+	}
+
+	insertSQL := "INSERT INTO TencentGroupMessage (message_id,self_group_id,self_sender_id,time_stamp) VALUES (?,?,?,?)"
+	id, err := s.Insert(insertSQL, messageId, selfGroupId, selfSenderId, time.Now().Unix())
+
+	if err != nil {
+		return 0, err
+	}
+
+	return int32(id), nil
+}
+
+func (s *SQLite3Util) GetGroupMessageID(selfGroupId int32, selfSenderId int64) (string, error) {
+	selectSQL := "SELECT * FROM TencentGroupMessage WHERE self_group_id = ? AND self_sender_id = ? ORDER BY id DESC"
+	var tgms []TencentGroupMessage
+	err := s.QueryToStructs(&tgms, selectSQL, selfGroupId, selfSenderId)
+	if err == nil {
+		if len(tgms) > 0 {
+			return tgms[0].MessageId, nil
+		}
+	}
+	return "", err
+}
+func (s *SQLite3Util) GetGroupID(messageId int32) (string, error) {
+	selectSQL := "SELECT * FROM TencentGroup WHERE id = ?"
+	var tgms []TencentGroup
+	err := s.QueryToStructs(&tgms, selectSQL, messageId)
+	if err == nil {
+		if len(tgms) > 0 {
+			return tgms[0].GroupOpenid, nil
+		}
+	}
+	return "", err
+}
+func (s *SQLite3Util) GetSenderID(messageId int32) (string, error) {
+	selectSQL := "SELECT * FROM TencentAuthor WHERE id = ?"
+	var tgms []TencentAuthor
+	err := s.QueryToStructs(&tgms, selectSQL, messageId)
+	if err == nil {
+		if len(tgms) > 0 {
+			return tgms[0].MemberOpenid, nil
+		}
+	}
+	return "", err
 }
 
 // ExampleUsage 示例使用
