@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"mime/multipart"
 	"net/http"
 	"strconv"
@@ -38,11 +39,12 @@ var accessToken string
 var timestamp int64
 var TencentAppId int
 var TencentSecret string
+var asyncId int64
 
 func (t *Tencent) Init(appId int, secret string, sandbox bool) error {
 	TencentAppId = appId
 	TencentSecret = secret
-
+	asyncId = 0
 	if sandbox {
 		ApiUrl = SandboxApiUrl
 	}
@@ -88,8 +90,19 @@ func getAppAccessToken() error {
 	}
 
 	timestamp = int64(expiresIn) + time.Now().Unix()
-	logger.Infof("QQ AccessToken: %s", accessToken)
+	logger.Infof("QQ凭证获取成功: %s", accessToken)
 	return nil
+}
+
+func NextAsyncID() int64 {
+	asyncId++
+	newID := asyncId
+
+	if newID > 1000000 {
+		asyncId = rand.Int63n(1060000)
+	}
+	logger.Debugf("AsyncID: %v", newID)
+	return newID
 }
 
 func (t *Tencent) Upload(file string) (string, error) {
@@ -151,7 +164,6 @@ func (t *Tencent) Upload(file string) (string, error) {
 	return uploadResponse.Url, nil
 }
 
-// TODO {"message":"请求参数url无效","code":850028,"err_code":40011021,"trace_id":"47ac2894f7cdd2099fa7f924f31c46f6"}
 func (t *Tencent) UploadFile(file string, groupId string) (*dto.RichMediaMsgResp, error) {
 
 	//encoded, _ := base64.StdEncoding.DecodeString(file)
@@ -226,9 +238,9 @@ func (t *Tencent) SendGroupMessage(data MessageRequest) {
 		return
 	}
 
-	for i, element := range data.Message {
-		logger.Debugf("%v ElementType: %+v,", i, element.ElementType)
+	for _, element := range data.Message {
 		var groupMessageToCreate *dto.GroupMessageToCreate
+		seq := NextAsyncID()
 		if element.ElementType == onebot.TextType {
 			groupMessageToCreate = &dto.GroupMessageToCreate{
 				Content:          element.Data.Text,
@@ -241,7 +253,7 @@ func (t *Tencent) SendGroupMessage(data MessageRequest) {
 				MessageReference: nil,
 				EventID:          "",
 				MsgID:            MessageId,
-				MsgReq:           1,
+				MsgReq:           uint(seq),
 			}
 		} else if element.ElementType == onebot.ImageType {
 			file, err := t.UploadFile(element.Data.Image.File, GroupId)
@@ -264,12 +276,12 @@ func (t *Tencent) SendGroupMessage(data MessageRequest) {
 				MessageReference: nil,
 				EventID:          "",
 				MsgID:            MessageId,
-				MsgReq:           1,
+				MsgReq:           uint(seq),
 			}
 		} else {
 			logger.Warnf("暂不支持的消息类型: %s", element.ElementType)
 		}
-		logger.Warn(groupMessageToCreate)
+
 		if groupMessageToCreate == nil {
 			logger.Warnf("群消息构建失败")
 			return
@@ -301,8 +313,13 @@ func (t *Tencent) SendGroupMessage(data MessageRequest) {
 		defer resp.Body.Close()
 
 		// 读取响应
-		body, _ := io.ReadAll(resp.Body)
-		logger.Infof("SendGroupMessage %v", string(body))
+		//_, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode != 200 {
+			body, _ := io.ReadAll(resp.Body)
+			logger.Warnf("发送群消息失败: %v", string(body))
+		} else {
+			logger.Info("发送群消息成功")
+		}
 	}
 
 }

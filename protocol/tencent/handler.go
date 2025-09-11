@@ -149,6 +149,7 @@ func GroupAtMessageEventHandler(event *dto.Payload, data *dto.GroupATMessageData
 		}
 	}
 	rawMessage := strings.Join(rawMessages, "")
+
 	for _, client := range websocket.Manager.GetAllClients() {
 		messageRequest := websocket.MessageRequest{
 			MessageBase: websocket.MessageBase{

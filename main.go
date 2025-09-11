@@ -7,16 +7,16 @@ import (
 	"GoQHttp/utils"
 	"GoQHttp/websocket"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
 )
 
-var logFile *os.File
-var configuration *config.Config
+var (
+	logFile       *os.File
+	configuration *config.Config
+	TencentClient websocket.Tencent
+)
 
 // initLogger 初始化日志系统
 func initLogger(config *config.Config) error {
@@ -59,7 +59,7 @@ func main() {
 	// 加载配置
 	err := config.LoadConfig("config.yml")
 	if err != nil {
-		fmt.Printf("加载配置失败: %v", err)
+		return
 	}
 
 	configuration = config.GetConfig()
@@ -87,27 +87,35 @@ func main() {
 		http.HandleFunc(configuration.Bot.QQ.WebhookPath, webhookHandler)
 		go tencent.HandlerEvent()
 	}
+
 	if len(configuration.Channels) > 0 {
+		err := TencentClient.Init(configuration.Bot.QQ.Id, configuration.Bot.QQ.Secret, false)
+		if err != nil {
+			logger.Errorf("GetAppAccessToken err: %v", err)
+			return
+		}
 		for _, channel := range configuration.Channels {
+			logger.Infof("%+v", channel)
 			if channel.WSReverse != nil {
 				// 反向 WebSocket
 				client := websocket.NewWebSocketClient(
 					channel.WSReverse.Universal,
 					int64(configuration.Bot.QQ.Uid),
-					configuration.Bot.QQ.Id,
-					configuration.Bot.QQ.Secret,
 					"Universal",
 					channel.WSReverse.Authorization,
 					channel.WSReverse.ReconnectInterval,
 					configuration.Bot.QQ.Sandbox,
+					TencentClient,
+					channel.WSReverse.MaxRetries,
+					channel.WSReverse.RetryDelay,
 				)
 				websocket.Manager.AddClient(client)
-				go client.Connect()
 			} else {
-				// 正向 WebSocket
+				//TODO 正向 WebSocket
 			}
 
 		}
+		websocket.Manager.StartAll()
 	}
 
 	// 创建带超时的 HTTP 服务器
@@ -124,18 +132,8 @@ func main() {
 	if configuration.Logging.FilePath != "" {
 		logger.Infof("日志文件: %s", configuration.Logging.FilePath)
 	}
-	// 等待中断信号
-	interrupt := make(chan os.Signal, 1)
-	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
 
 	if err := server.ListenAndServe(); err != nil {
 		logger.Errorf("服务器启动失败: %v", err)
 	}
-
-	<-interrupt
-	logger.Info("接收到中断信号，关闭所有连接...")
-
-	// 关闭所有连接
-	websocket.Manager.CloseAll()
-	logger.Info("所有连接已关闭，程序退出")
 }

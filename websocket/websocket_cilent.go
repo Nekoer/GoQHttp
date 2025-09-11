@@ -15,6 +15,7 @@ import (
 
 	logging "github.com/sacOO7/go-logger"
 	"github.com/sacOO7/gowebsocket"
+	uuid "github.com/satori/go.uuid"
 )
 
 // Client 表示一个 WebSocket 客户端连接
@@ -24,16 +25,17 @@ type Client struct {
 	Secret        string
 	URL           string
 	Conn          gowebsocket.Socket
-	mu            sync.Mutex
+	mu            sync.RWMutex
 	Connected     bool
-	Reconnect     bool
-	MaxRetries    int
-	RetryCount    int
+	MaxRetries    int64
+	RetryDelay    time.Duration
+	RetryCount    int64
 	XSelfID       int64
 	XClientRole   string
 	Authorization string
 	Interval      int64
 	Sandbox       bool
+	TencentClient Tencent
 }
 
 // ClientManager 管理多个 WebSocket 客户端连接
@@ -41,31 +43,6 @@ type ClientManager struct {
 	clients map[string]*Client
 	mu      sync.RWMutex
 }
-
-//	meta_event_type: 'heartbeat',
-//	interval: 5000,
-//	post_type: 'meta_event',
-//	self_id: this.bot.selfId,
-//	time: Date.now(),
-//	status: {
-//	  app_initialized: true,
-//	  app_enabled: true,
-//	  plugins_good: true,
-//	  app_good: true,
-//	  online: true,
-//	  good: true,
-//	  stat: {
-//	    packet_received: 0,
-//	    packet_sent: 0,
-//	    packet_lost: 0,
-//	    message_received: 0,
-//	    message_sent: 0,
-//	    disconnect_times: 0,
-//	    lost_times: 0,
-//	    last_message_time: 0,
-//	  },
-//	}
-//
 
 type PostType string
 
@@ -190,8 +167,7 @@ type Response struct {
 }
 
 var (
-	Manager       *ClientManager
-	TencentClient *Tencent
+	Manager *ClientManager
 )
 
 func init() {
@@ -201,100 +177,116 @@ func init() {
 }
 
 // NewWebSocketClient 创建新的 WebSocket 客户端
-func NewWebSocketClient(url string, xSelfID int64, appId int, secret string, xClientRole string, authorization string, interval int64, sandbox bool) *Client {
+func NewWebSocketClient(url string, xSelfID int64, xClientRole string, authorization string, interval int64, sandbox bool, tencentClient Tencent, maxRetries int64, retryDelay int64) *Client {
+
 	return &Client{
 		ID:            generateID(),
-		AppId:         appId,
-		Secret:        secret,
 		URL:           url,
 		Connected:     false,
-		Reconnect:     true,
-		MaxRetries:    10,
+		MaxRetries:    maxRetries,
 		RetryCount:    0,
+		RetryDelay:    time.Duration(retryDelay) * time.Second,
 		XSelfID:       xSelfID,
 		XClientRole:   xClientRole,
 		Authorization: authorization,
 		Interval:      interval,
 		Sandbox:       sandbox,
+		TencentClient: tencentClient,
 	}
 }
 
 // generateID 生成唯一客户端 ID
 func generateID() string {
-	return fmt.Sprintf("client-%d", time.Now().UnixNano())
+	return fmt.Sprintf("client-%d", uuid.NewV4())
 }
 
 // Connect 连接到 WebSocket 服务器
 func (c *Client) Connect() {
-	err := TencentClient.Init(c.AppId, c.Secret, false)
+	logger.Infof("尝试连接到: %s", c.URL)
+
+	// 解析 URL
+	u, err := url.Parse(c.URL)
 	if err != nil {
-		logger.Errorf("GetAppAccessToken err: %v", err)
+		logger.Warnf("URL 解析错误: %v", err)
+		time.Sleep(5 * time.Second)
 		return
 	}
-	for {
-		if c.RetryCount >= c.MaxRetries && c.MaxRetries > 0 {
-			logger.Warnf("达到最大重试次数 (%d)，停止连接: %s", c.MaxRetries, c.URL)
-			return
-		}
 
-		logger.Infof("尝试连接到: %s", c.URL)
+	header := http.Header{}
+	header.Set("X-Self-ID", strconv.FormatInt(c.XSelfID, 10))
+	header.Set("X-Client-Role", c.XClientRole)
+	if c.Authorization != "" {
+		header.Set("Authorization", "Bearer "+c.Authorization)
+	}
 
-		// 解析 URL
-		u, err := url.Parse(c.URL)
-		if err != nil {
-			logger.Warnf("URL 解析错误: %v", err)
-			time.Sleep(5 * time.Second)
-			continue
-		}
-		header := http.Header{}
-		header.Set("X-Self-ID", strconv.FormatInt(c.XSelfID, 10))
-		header.Set("X-Client-Role", c.XClientRole)
-		if c.Authorization != "" {
-			header.Set("Authorization", "Bearer "+c.Authorization)
-		}
+	// 建立连接
+	c.Conn = gowebsocket.New(u.String())
+	c.Conn.RequestHeader = header
+	c.Conn.WebsocketDialer.WriteBufferSize = 8192
+	c.Conn.WebsocketDialer.ReadBufferSize = 8192
+	c.Conn.GetLogger().SetLevel(logging.OFF)
+	c.Conn.ConnectionOptions = gowebsocket.ConnectionOptions{
+		UseSSL:         true,
+		UseCompression: true,
+		Subprotocols:   []string{},
+	}
 
-		exit := make(chan struct{}, 1)
+	c.Conn.OnConnected = func(socket gowebsocket.Socket) {
+		c.mu.Lock()
+		c.Connected = true
+		c.RetryCount = 0 // 重置重试计数
+		c.mu.Unlock()
 
-		// 建立连接
-		c.Conn = gowebsocket.New(u.String())
-		c.Conn.RequestHeader = header
-		c.Conn.WebsocketDialer.WriteBufferSize = 8192
-		c.Conn.WebsocketDialer.ReadBufferSize = 8192
-		c.Conn.GetLogger().SetLevel(logging.OFF)
-		c.Conn.ConnectionOptions = gowebsocket.ConnectionOptions{
-			UseSSL:         true,
-			UseCompression: true,
-			Subprotocols:   []string{},
-		}
-
-		c.Conn.OnConnected = func(socket gowebsocket.Socket) {
-			c.Connected = true
-			logger.Infof("已连接 %v", u.String())
-
-		}
-		c.Conn.OnConnectError = func(err error, socket gowebsocket.Socket) {
-			logger.Errorf("connectErr:  %v", err.Error())
-			exit <- struct{}{}
-		}
-		c.Conn.OnTextMessage = func(message string, socket gowebsocket.Socket) {
-			c.handleMessage([]byte(message))
-		}
-		c.Conn.OnDisconnected = func(err error, socket gowebsocket.Socket) {
-			c.Connected = false
-			exit <- struct{}{}
-			return
-		}
-		logger.Logger.Info("Connecting to platform server: " +
-			c.URL + "...")
-		c.Conn.Connect()
 		c.LifeCycle()
-		for {
-			if !c.Connected {
+
+		logger.Infof("已连接 %v", u.String())
+	}
+	c.Conn.OnConnectError = func(err error, socket gowebsocket.Socket) {
+		c.mu.Lock()
+		c.Connected = false
+		c.mu.Unlock()
+		logger.Errorf("%v 连接出错:  %v", c.URL, err.Error())
+	}
+	c.Conn.OnTextMessage = func(message string, socket gowebsocket.Socket) {
+		c.handleMessage([]byte(message))
+	}
+	c.Conn.OnDisconnected = func(err error, socket gowebsocket.Socket) {
+		c.mu.Lock()
+		c.Connected = false
+		c.mu.Unlock()
+		logger.Warnf("%v 断开连接", c.URL)
+	}
+	c.Conn.Connect()
+	for {
+		if !c.Connected {
+			return
+		}
+		c.HeartBeat()
+		time.Sleep(time.Second * time.Duration(5))
+	}
+}
+
+func (c *Client) Daemon() {
+	for {
+		if c.MaxRetries == 0 {
+			if c.RetryCount >= c.MaxRetries && c.MaxRetries > 0 {
+				logger.Warnf("达到最大重试次数 (%d)，停止连接: %s", c.MaxRetries, c.URL)
 				return
 			}
-			c.HeartBeat()
-			time.Sleep(time.Second * time.Duration(5))
 		}
+
+		c.Connect()
+
+		c.mu.Lock()
+		c.Connected = false
+		c.RetryCount++
+		c.mu.Unlock()
+
+		if c.RetryDelay > 0 {
+			logger.Warnf("%v将在%v后重连", c.URL, c.RetryDelay)
+			time.Sleep(c.RetryDelay)
+		}
+
 	}
 }
 
@@ -337,13 +329,15 @@ func (c *Client) HeartBeat() {
 func (c *Client) SendMessage(data string) {
 	c.mu.Lock()
 	logger.Debug(data)
-	c.Conn.SendText(data)
+	if c.Connected {
+		c.Conn.SendText(data)
+	}
 	c.mu.Unlock()
 }
 
 func (c *Client) SendGroupMessage(data MessageRequest) {
 	c.mu.Lock()
-	TencentClient.SendGroupMessage(data)
+	c.TencentClient.SendGroupMessage(data)
 	c.mu.Unlock()
 }
 
@@ -464,8 +458,6 @@ func (c *Client) handleMessage(message []byte) {
 			}
 		}
 		messageRequest.Message = messages
-
-		logger.Errorf("%v,%v", len(messageRequest.Message), len(messages))
 	}
 	// 根据消息类型处理
 	switch messageRequest.PostType {
@@ -485,12 +477,11 @@ func (c *Client) Close() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.Reconnect = false
-
 	if c.Connected {
 		c.Conn.SendBinary([]byte{})
 		c.Conn.Close()
 		c.Connected = false
+
 	}
 }
 
@@ -538,4 +529,12 @@ func (m *ClientManager) CloseAll() {
 		client.Close()
 	}
 	m.clients = make(map[string]*Client)
+}
+
+func (m *ClientManager) StartAll() {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, client := range m.clients {
+		go client.Daemon()
+	}
 }
