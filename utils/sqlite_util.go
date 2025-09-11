@@ -8,7 +8,7 @@ import (
 	"reflect"
 	"time"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/glebarez/sqlite"
 )
 
 // SQLite3Util 工具类
@@ -59,7 +59,7 @@ var DefaultOptions = Options{
 
 // NewSQLite3Util 工具实例
 func NewSQLite3Util(options Options) (*SQLite3Util, error) {
-	db, err := sql.Open("sqlite3", options.DBPath)
+	db, err := sql.Open("sqlite", options.DBPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %v", err)
 	}
@@ -470,4 +470,92 @@ func (s *SQLite3Util) GetSenderID(messageId int32) (string, error) {
 		}
 	}
 	return "", err
+}
+
+// ExampleUsage 示例使用
+func ExampleUsage() {
+	// 初始化数据库连接
+	dbUtil, err := NewSQLite3Util(Options{
+		DBPath:      "./sqlite.db",
+		MaxIdle:     10,
+		MaxOpen:     100,
+		MaxLifetime: time.Hour,
+	})
+	DBUtil = dbUtil
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer dbUtil.Close()
+
+	// 创建表
+	createTableSQL := `
+	CREATE TABLE IF NOT EXISTS TencentGroup (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		group_id TEXT NOT NULL,
+		group_openid TEXT NOT NULL
+	)
+	`
+
+	_, err = dbUtil.Exec(createTableSQL)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	createTableSQL = `
+	CREATE TABLE IF NOT EXISTS TencentAuthor (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		member_openid TEXT NOT NULL,
+		author_id TEXT NOT NULL
+	)
+	`
+
+	_, err = dbUtil.Exec(createTableSQL)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// 插入数据
+	//insertSQL := "INSERT INTO users (name, email) VALUES (?, ?)"
+	//id, err := dbUtil.Insert(insertSQL, "John Doe", "john@example.com")
+	//if err != nil {
+	//	log.Fatal(err)
+	//}
+	//fmt.Printf("Inserted user with ID: %d\n", id)
+	//
+	//// 查询数据
+	//type User struct {
+	//	ID        int    `db:"id"`
+	//	Name      string `db:"name"`
+	//	Email     string `db:"email"`
+	//	CreatedAt string `db:"created_at"`
+	//}
+	//
+	//var users []User
+	//querySQL := "SELECT * FROM users WHERE name = ?"
+	//err = dbUtil.QueryToStructs(&users, querySQL, "John Doe")
+	//if err != nil {
+	//	log.Fatal(err)
+	//}
+	//
+	//for _, user := range users {
+	//	fmt.Printf("User: %+v\n", user)
+	//}
+	//
+	//// 使用事务
+	//err = dbUtil.Transaction(func(tx *sql.Tx) error {
+	//	// 在事务中执行多个操作
+	//	_, err := tx.Exec("UPDATE users SET name = ? WHERE id = ?", "John Updated", id)
+	//	if err != nil {
+	//		return err
+	//	}
+	//
+	//	_, err = tx.Exec("INSERT INTO users (name, email) VALUES (?, ?)", "Jane Doe", "jane@example.com")
+	//	return err
+	//})
+
+	if err != nil {
+		log.Fatal("Transaction failed:", err)
+	}
+
+	fmt.Println("Transaction completed successfully")
 }

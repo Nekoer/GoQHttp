@@ -3,7 +3,7 @@ name: CI
 on: [push, pull_request,workflow_dispatch]
 
 env:
-  BINARY_PREFIX: "go-qhttp_"
+  BINARY_PREFIX: "GoQHttp_"
   BINARY_SUFFIX: ""
   COMMIT_ID: "${{ github.sha }}"
   PR_PROMPT: "::warning:: Build artifact will not be uploaded due to the workflow is trigged by pull request."
@@ -22,6 +22,10 @@ jobs:
             goarch: arm
           - goos: darwin
             goarch: "386"
+          - goos: windows
+            goarch: arm
+          - goos: windows
+            goarch: arm64
       fail-fast: true
     steps:
       - uses: actions/checkout@v5
@@ -29,7 +33,7 @@ jobs:
         uses: actions/setup-go@v6
         with:
           cache: true
-          go-version: '1.24.0'
+          go-version: '1.24.1'
       - name: Build binary file
         env:
           GOOS: ${{ matrix.goos }}

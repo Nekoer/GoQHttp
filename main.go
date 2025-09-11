@@ -98,7 +98,6 @@ func main() {
 	if len(configuration.Channels) > 0 {
 
 		for _, channel := range configuration.Channels {
-			logger.Infof("%+v", channel)
 			if channel.WSReverse != nil {
 				// 反向 WebSocket
 				client := websocket.NewWebSocketClient(
