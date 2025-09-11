@@ -24,6 +24,8 @@ channels:
       universal: "url"
       reconnect-interval: 3000
       authorization:
+      retry-delay: 0
+      max-retries: 0
   - ws:
       address: 0.0.0.0:8080
       authorization:
