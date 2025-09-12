@@ -12,13 +12,13 @@ jobs:
       - name: Checkout
         run: |
           git version
-          git clone "${{ github.event.repository.html_url }}" /home/runner/work/go-qhttp/go-qhttp
+          git clone "${{ github.event.repository.html_url }}" /home/runner/work/GoQHttp/GoQHttp
           git checkout "${{ github.ref }}"
 
       - name: Set up Go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v6
         with:
-          go-version: '1.20'
+          go-version: '1.24.1'
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
