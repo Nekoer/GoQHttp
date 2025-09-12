@@ -1,8 +1,9 @@
-package websocket
+package openapi
 
 import (
 	"GoQHttp/logger"
 	"GoQHttp/onebot"
+	"GoQHttp/protocol"
 	"GoQHttp/protocol/tencent/dto"
 	"GoQHttp/utils"
 	"bytes"
@@ -18,17 +19,7 @@ import (
 	"time"
 )
 
-type Tencent struct {
-}
-
-type ATRequest struct {
-	AppId        string `json:"appId"`
-	ClientSecret string `json:"clientSecret"`
-}
-
-type ATResponse struct {
-	AccessToken string `json:"access_token"`
-	ExpiresIn   string `json:"expires_in"`
+type OpenApi struct {
 }
 
 var ApiUrl = "https://api.sgroup.qq.com"
@@ -41,7 +32,7 @@ var TencentAppId int
 var TencentSecret string
 var asyncId int64
 
-func (t *Tencent) Init(appId int, secret string, sandbox bool) error {
+func (o *OpenApi) Init(appId int, secret string, sandbox bool) error {
 	TencentAppId = appId
 	TencentSecret = secret
 	asyncId = 0
@@ -58,8 +49,8 @@ func (t *Tencent) Init(appId int, secret string, sandbox bool) error {
 }
 
 func getAppAccessToken() error {
-	atRequest := ATRequest{
-		AppId:        strconv.Itoa(TencentAppId),
+	atRequest := dto.GetAccessTokenReq{
+		AppID:        strconv.Itoa(TencentAppId),
 		ClientSecret: TencentSecret,
 	}
 	data, err := json.Marshal(atRequest)
@@ -77,7 +68,7 @@ func getAppAccessToken() error {
 		return err
 	}
 
-	var atResponse ATResponse
+	var atResponse dto.GetAccessTokenResp
 	err = json.Unmarshal(body, &atResponse)
 	if err != nil {
 		return err
@@ -94,7 +85,7 @@ func getAppAccessToken() error {
 	return nil
 }
 
-func NextAsyncID() int64 {
+func (o *OpenApi) NextAsyncID() int64 {
 	asyncId++
 	newID := asyncId
 
@@ -105,7 +96,7 @@ func NextAsyncID() int64 {
 	return newID
 }
 
-func (t *Tencent) Upload(file string) (string, error) {
+func (o *OpenApi) Upload(file string) (string, error) {
 
 	file = strings.Replace(file, "base64://", "", -1)
 	decodeString, err := base64.StdEncoding.DecodeString(file)
@@ -164,10 +155,10 @@ func (t *Tencent) Upload(file string) (string, error) {
 	return uploadResponse.Url, nil
 }
 
-func (t *Tencent) UploadFile(file string, groupId string) (*dto.RichMediaMsgResp, error) {
+func (o *OpenApi) UploadFile(file string, groupId string) (*dto.RichMediaMsgResp, error) {
 
 	//encoded, _ := base64.StdEncoding.DecodeString(file)
-	upload, err := t.Upload(file)
+	upload, err := o.Upload(file)
 	if err != nil {
 		return nil, err
 	}
@@ -217,7 +208,24 @@ func (t *Tencent) UploadFile(file string, groupId string) (*dto.RichMediaMsgResp
 	return richMediaMsgResp, err
 }
 
-func (t *Tencent) SendGroupMessage(data MessageRequest) {
+func (o *OpenApi) SendPacket() {
+	for payload := range protocol.OfficialChan {
+		switch payload.MessageType {
+		case onebot.GroupMessage:
+			o.SendGroupMessage(payload)
+		default:
+			marshal, err := json.Marshal(payload)
+			if err != nil {
+				logger.Errorf("SendPacket json: %v", err)
+				return
+			}
+			logger.Warnf("暂不支持的数据包: %v", marshal)
+		}
+
+	}
+}
+
+func (o *OpenApi) SendGroupMessage(data *onebot.MessageRequest) {
 	if time.Now().Unix() <= timestamp {
 		err := getAppAccessToken()
 		if err != nil {
@@ -240,7 +248,7 @@ func (t *Tencent) SendGroupMessage(data MessageRequest) {
 
 	for _, element := range data.Message {
 		var groupMessageToCreate *dto.GroupMessageToCreate
-		seq := NextAsyncID()
+		seq := o.NextAsyncID()
 		if element.ElementType == onebot.TextType {
 			groupMessageToCreate = &dto.GroupMessageToCreate{
 				Content:          element.Data.Text,
@@ -256,7 +264,7 @@ func (t *Tencent) SendGroupMessage(data MessageRequest) {
 				MsgReq:           uint(seq),
 			}
 		} else if element.ElementType == onebot.ImageType {
-			file, err := t.UploadFile(element.Data.Image.File, GroupId)
+			file, err := o.UploadFile(element.Data.Image.File, GroupId)
 			if err != nil {
 				logger.Errorf("UploadFile err: %v", err)
 				return
@@ -322,4 +330,73 @@ func (t *Tencent) SendGroupMessage(data MessageRequest) {
 		}
 	}
 
+}
+
+func (o *OpenApi) GetGuild(guildId string) (*dto.Guild, error) {
+	r, err := http.NewRequest("GET", fmt.Sprintf("%s/guilds/%s", ApiUrl, guildId), nil)
+	if err != nil {
+		logger.Errorf("Error creating request: %v", err)
+		return nil, err
+	}
+
+	r.Header = http.Header{
+		"Content-Type":  []string{"application/json"},
+		"Authorization": []string{"QQBot " + accessToken},
+	}
+
+	// 发送请求
+	client := &http.Client{}
+	resp, err := client.Do(r)
+	if err != nil {
+		logger.Errorf("Error sending request: %v", err)
+		return nil, err
+	}
+
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	logger.Debugf("%v", string(body))
+	var guild *dto.Guild
+	err = json.Unmarshal(body, &guild)
+
+	if err != nil {
+		logger.Errorf("json Unmarshal err: %v", err)
+		return nil, err
+	}
+
+	return guild, nil
+}
+
+func (o *OpenApi) GetChannel(channelId string) (*dto.Channel, error) {
+	r, err := http.NewRequest("GET", fmt.Sprintf("%s/channels/%s", ApiUrl, channelId), nil)
+	if err != nil {
+		logger.Errorf("Error creating request: %v", err)
+		return nil, err
+	}
+
+	r.Header = http.Header{
+		"Content-Type":  []string{"application/json"},
+		"Authorization": []string{"QQBot " + accessToken},
+	}
+
+	// 发送请求
+	client := &http.Client{}
+	resp, err := client.Do(r)
+	if err != nil {
+		logger.Errorf("Error sending request: %v", err)
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	logger.Debugf("%v", string(body))
+	var channel *dto.Channel
+	err = json.Unmarshal(body, &channel)
+
+	if err != nil {
+		logger.Errorf("json Unmarshal err: %v", err)
+		return nil, err
+	}
+
+	return channel, nil
 }

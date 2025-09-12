@@ -1,11 +1,12 @@
 package tencent
 
 import (
+	"GoQHttp/constant"
 	"GoQHttp/logger"
 	"GoQHttp/onebot"
+	"GoQHttp/protocol"
 	"GoQHttp/protocol/tencent/dto"
 	"GoQHttp/utils"
-	"GoQHttp/websocket"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -150,42 +151,35 @@ func GroupAtMessageEventHandler(event *dto.Payload, data *dto.GroupATMessageData
 	}
 	rawMessage := strings.Join(rawMessages, "")
 
-	for _, client := range websocket.Manager.GetAllClients() {
-		messageRequest := websocket.MessageRequest{
-			MessageBase: websocket.MessageBase{
-				Time:     time.Now().Unix(),
-				SelfId:   client.XSelfID,
-				PostType: websocket.MessagePost,
-			},
-			MessageType:     websocket.GroupMessage,
-			SubType:         websocket.Normal,
-			MessageId:       MessageId,
-			GroupId:         GroupId,
-			UserId:          SenderId,
-			OriginalMessage: string(event.RawMessage),
-			Message:         messages,
-			RawMessage:      rawMessage,
-			Font:            1,
-			Sender: websocket.Sender{
-				UserId:   SenderId,
-				NickName: "",
-				Sex:      "",
-				Age:      0,
-				Card:     "",
-				Area:     "",
-				Level:    "",
-				Role:     "",
-				Title:    "",
-			},
-		}
-
-		jsonData, err := json.Marshal(messageRequest)
-		if err != nil {
-			return err
-		}
-
-		client.SendMessage(string(jsonData))
+	messageRequest := onebot.MessageRequest{
+		MessageBase: onebot.MessageBase{
+			Time:     time.Now().Unix(),
+			SelfId:   1, // 会在发送的时候根据websocket内部的XSelfId进行覆盖
+			PostType: onebot.MessagePost,
+		},
+		MessageType:     onebot.GroupMessage,
+		SubType:         onebot.Normal,
+		MessageId:       MessageId,
+		GroupId:         GroupId,
+		UserId:          SenderId,
+		OriginalMessage: string(event.RawMessage),
+		Message:         messages,
+		RawMessage:      rawMessage,
+		Font:            1,
+		Sender: onebot.Sender{
+			UserId:   SenderId,
+			NickName: "",
+			Sex:      "",
+			Age:      0,
+			Card:     "",
+			Area:     "",
+			Level:    "",
+			Role:     "",
+			Title:    "",
+		},
 	}
+
+	protocol.BroadcastChan <- messageRequest
 	return nil
 }
 
@@ -236,11 +230,33 @@ func MessageReactionEventHandler(event *dto.Payload, data *dto.MessageReactionDa
 
 // ATMessageEventHandler at 机器人消息事件 handler
 func ATMessageEventHandler(event *dto.Payload, data *dto.ATMessageDataEvent) error {
+	guild, err := constant.OpenApi.GetGuild(data.GuildID)
+	if err != nil {
+		return err
+	}
+	channel, err := constant.OpenApi.GetChannel(data.ChannelID)
+	if err != nil {
+		return err
+	}
+	rawMessage := data.Content
+	attachments, err := constant.CQCode.BuildCQCodeFromAttachments(data.Attachments)
+	if err != nil {
+		return err
+	}
+	rawMessage += strings.Join(attachments, "")
+	logger.Infof("[频道AT][%v][%v]%v:%v", guild.Name, channel.Name, data.Author.Username, rawMessage)
 	return nil
 }
 
 // DirectMessageEventHandler 私信消息事件 handler
 func DirectMessageEventHandler(event *dto.Payload, data *dto.DirectMessageDataEvent) error {
+	rawMessage := data.Content
+	attachments, err := constant.CQCode.BuildCQCodeFromAttachments(data.Attachments)
+	if err != nil {
+		return err
+	}
+	rawMessage += strings.Join(attachments, "")
+	logger.Infof("[频道私聊]%v:%v", data.Author.Username, rawMessage)
 	return nil
 }
 

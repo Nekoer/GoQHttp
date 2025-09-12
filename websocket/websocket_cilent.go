@@ -1,15 +1,15 @@
 package websocket
 
 import (
+	"GoQHttp/constant"
 	"GoQHttp/logger"
 	"GoQHttp/onebot"
+	"GoQHttp/protocol"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -35,121 +35,12 @@ type Client struct {
 	Authorization string
 	Interval      int64
 	Sandbox       bool
-	TencentClient Tencent
 }
 
 // ClientManager 管理多个 WebSocket 客户端连接
 type ClientManager struct {
 	clients map[string]*Client
 	mu      sync.RWMutex
-}
-
-type PostType string
-
-const (
-	MessagePost   PostType = "message"
-	NoticePost    PostType = "notice"
-	RequestPost   PostType = "request"
-	MetaEventPost PostType = "meta_event"
-)
-
-// MessageBase 定义消息结构
-type MessageBase struct {
-	Time     int64    `json:"time,omitempty"`
-	SelfId   int64    `json:"self_id,omitempty"`
-	PostType PostType `json:"post_type,omitempty"`
-}
-
-type SubType string
-
-const (
-	Enable  SubType = "enable"
-	Disable SubType = "disable"
-	Connect SubType = "connect"
-	Friend  SubType = "friend"
-	Group   SubType = "group"
-	Other   SubType = "other"
-	Normal  SubType = "normal"
-)
-
-type MetaEventType string
-
-const (
-	LifecycleType MetaEventType = "lifecycle"
-	HeartbeatType MetaEventType = "heartbeat"
-)
-
-type LifeCycle struct {
-	MessageBase
-	MetaEventType MetaEventType `json:"meta_event_type"`
-	SubType       SubType       `json:"sub_type"`
-}
-
-type Status struct {
-	Online bool `json:"online"`
-	Good   bool `json:"good"`
-}
-
-type Heartbeat struct {
-	MessageBase
-	MetaEventType MetaEventType `json:"meta_event_type"`
-	Interval      int64         `json:"interval"`
-	Status        Status        `json:"status"`
-}
-
-type MessageType string
-
-const (
-	PrivateMessage MessageType = "private"
-	GroupMessage   MessageType = "group"
-)
-
-type Sex string
-
-const (
-	Male    Sex = "male"
-	Female  Sex = "female"
-	Unknown Sex = "unknown"
-)
-
-type Role string
-
-const (
-	Owner  Role = "Owner"
-	Admin  Role = "Admin"
-	Member Role = "Member"
-)
-
-type Sender struct {
-	UserId   int64  `json:"user_id"`
-	NickName string `json:"nick_name"`
-	Sex      Sex    `json:"sex"`
-	Age      int32  `json:"age"`
-	Card     string `json:"card"`
-	Area     string `json:"area"`
-	Level    string `json:"level"`
-	Role     Role   `json:"role"`
-	Title    string `json:"title"`
-}
-type Anonymous struct {
-	Id   int64  `json:"id,omitempty"`
-	Name string `json:"name,omitempty"`
-	Flag string `json:"flag,omitempty"`
-}
-type MessageRequest struct {
-	MessageBase
-	MessageType     MessageType       `json:"message_type"`
-	SubType         SubType           `json:"sub_type,omitempty"`
-	MessageId       int32             `json:"message_id,omitempty"`
-	GroupId         int32             `json:"group_id"`
-	UserId          int64             `json:"user_id"`
-	Anonymous       *Anonymous        `json:"anonymous,omitempty"`
-	OriginalMessage string            `json:"original_message,omitempty"`
-	Message         []*onebot.Element `json:"message"`
-	RawMessage      string            `json:"raw_message,omitempty"`
-	Font            int32             `json:"font,omitempty"`
-	Sender          Sender            `json:"sender,omitempty"`
-	AutoEscape      bool              `json:"auto_escape,omitempty"`
 }
 
 type Request struct {
@@ -177,7 +68,7 @@ func init() {
 }
 
 // NewWebSocketClient 创建新的 WebSocket 客户端
-func NewWebSocketClient(url string, xSelfID int64, xClientRole string, authorization string, interval int64, sandbox bool, tencentClient Tencent, maxRetries int64, retryDelay int64) *Client {
+func NewWebSocketClient(url string, xSelfID int64, xClientRole string, authorization string, interval int64, sandbox bool, maxRetries int64, retryDelay int64) *Client {
 
 	return &Client{
 		ID:            generateID(),
@@ -191,7 +82,6 @@ func NewWebSocketClient(url string, xSelfID int64, xClientRole string, authoriza
 		Authorization: authorization,
 		Interval:      interval,
 		Sandbox:       sandbox,
-		TencentClient: tencentClient,
 	}
 }
 
@@ -268,7 +158,7 @@ func (c *Client) Connect() {
 
 func (c *Client) Daemon() {
 	for {
-		if c.MaxRetries == 0 {
+		if c.MaxRetries != 0 {
 			if c.RetryCount >= c.MaxRetries && c.MaxRetries > 0 {
 				logger.Warnf("达到最大重试次数 (%d)，停止连接: %s", c.MaxRetries, c.URL)
 				return
@@ -292,14 +182,14 @@ func (c *Client) Daemon() {
 
 func (c *Client) LifeCycle() {
 	c.mu.Lock()
-	lifeCycle := LifeCycle{
-		MessageBase: MessageBase{
+	lifeCycle := onebot.LifeCycle{
+		MessageBase: onebot.MessageBase{
 			Time:     time.Now().Unix(),
 			SelfId:   c.XSelfID,
-			PostType: MetaEventPost,
+			PostType: onebot.MetaEventPost,
 		},
-		MetaEventType: LifecycleType,
-		SubType:       Connect,
+		MetaEventType: onebot.LifecycleType,
+		SubType:       onebot.Connect,
 	}
 	msg, _ := json.Marshal(lifeCycle)
 	c.Conn.SendText(string(msg))
@@ -308,15 +198,15 @@ func (c *Client) LifeCycle() {
 
 func (c *Client) HeartBeat() {
 	c.mu.Lock()
-	heartbeat := Heartbeat{
-		MessageBase: MessageBase{
+	heartbeat := onebot.Heartbeat{
+		MessageBase: onebot.MessageBase{
 			Time:     time.Now().Unix(),
 			SelfId:   c.XSelfID,
-			PostType: MetaEventPost,
+			PostType: onebot.MetaEventPost,
 		},
-		MetaEventType: LifecycleType,
+		MetaEventType: onebot.LifecycleType,
 		Interval:      c.Interval,
-		Status: Status{
+		Status: onebot.Status{
 			Online: true,
 			Good:   false,
 		},
@@ -335,76 +225,6 @@ func (c *Client) SendMessage(data string) {
 	c.mu.Unlock()
 }
 
-func (c *Client) SendGroupMessage(data MessageRequest) {
-	c.mu.Lock()
-	c.TencentClient.SendGroupMessage(data)
-	c.mu.Unlock()
-}
-
-// CQCode 表示一个CQ码
-type CQCode struct {
-	Type   string            // CQ码类型，如"at", "image"
-	Params map[string]string // 参数字典
-	Raw    string            // 原始字符串
-}
-
-// ParseCQCode 解析CQ码字符串，返回CQCode结构体
-func ParseCQCode(s string) (*CQCode, error) {
-	// 匹配CQ码的正则表达式
-	pattern := `\[CQ:([^,\]]+)(?:,([^,\]]+=[^,\]]+))*\]`
-	re := regexp.MustCompile(pattern)
-
-	match := re.FindStringSubmatch(s)
-	if match == nil {
-		return nil, fmt.Errorf("无效的CQ码格式: %s", s)
-	}
-
-	cq := &CQCode{
-		Type:   match[1],
-		Params: make(map[string]string),
-		Raw:    s,
-	}
-
-	// 解析参数
-	if len(match) > 2 {
-		paramStr := match[2]
-		// 处理多个参数的情况
-		params := strings.Split(paramStr, ",")
-		for _, param := range params {
-			parts := strings.SplitN(param, "=", 2)
-			if len(parts) == 2 {
-				key := parts[0]
-				value := parts[1]
-				cq.Params[key] = value
-			}
-		}
-	}
-
-	return cq, nil
-}
-
-// ParseAllCQCodes 从文本中提取并解析所有CQ码
-func ParseAllCQCodes(text string) ([]*CQCode, error) {
-	pattern := `\[CQ:[^\]]+\]`
-	re := regexp.MustCompile(pattern)
-
-	matches := re.FindAllString(text, -1)
-	if matches == nil {
-		return nil, fmt.Errorf("未找到CQ码")
-	}
-
-	var cqCodes []*CQCode
-	for _, match := range matches {
-		cq, err := ParseCQCode(match)
-		if err != nil {
-			return nil, err
-		}
-		cqCodes = append(cqCodes, cq)
-	}
-
-	return cqCodes, nil
-}
-
 // handleMessage 处理接收到的消息
 func (c *Client) handleMessage(message []byte) {
 	var request Request
@@ -414,7 +234,7 @@ func (c *Client) handleMessage(message []byte) {
 		return
 	}
 
-	var messageRequest MessageRequest
+	var messageRequest *onebot.MessageRequest
 	marshal, err := json.Marshal(request.Params)
 	if err != nil {
 		return
@@ -422,52 +242,22 @@ func (c *Client) handleMessage(message []byte) {
 
 	err = json.Unmarshal(marshal, &messageRequest)
 	if err != nil {
-		//messageRequest.Message
-		var messages []*onebot.Element
-
-		codes, err := ParseAllCQCodes(string(marshal))
+		messages, err := constant.CQCode.ParseAllCQCodes(string(marshal))
 		if err != nil {
 			return
 		}
 
-		for _, code := range codes {
-			//logger.Debugf("%+v,%+v,%+v", code.Raw, code.Type, code.Params)
-			switch code.Type {
-			case "text":
-				{
-					text := code.Params["text"]
-					messages = append(messages, &onebot.Element{
-						ElementType: onebot.TextType,
-						Data: &onebot.Message{
-							Text: text,
-						},
-					})
-				}
-			case "image":
-				{
-					file := code.Params["file"]
-					messages = append(messages, &onebot.Element{
-						ElementType: onebot.ImageType,
-						Data: &onebot.Message{
-							Image: onebot.Image{
-								File: file,
-							},
-						},
-					})
-				}
-			}
-		}
 		messageRequest.Message = messages
 	}
 	// 根据消息类型处理
 	switch messageRequest.PostType {
-	case NoticePost:
+	case onebot.NoticePost:
 		logger.Infof("[%s] 通知事件: %v\n", c.URL, string(message))
-	case RequestPost:
+	case onebot.RequestPost:
 		logger.Infof("[%s] 请求事件: %v\n", c.URL, string(message))
-	case MessagePost:
+	case onebot.MessagePost:
 	default:
-		c.SendGroupMessage(messageRequest)
+		protocol.OfficialChan <- messageRequest
 		logger.Infof("[%s] 消息事件: %s\n", c.URL, string(message))
 	}
 }
@@ -536,5 +326,21 @@ func (m *ClientManager) StartAll() {
 	defer m.mu.RUnlock()
 	for _, client := range m.clients {
 		go client.Daemon()
+	}
+}
+
+// Broadcast 向所有连接的客户端广播消息
+func (m *ClientManager) Broadcast() {
+	for payload := range protocol.BroadcastChan {
+		for _, client := range m.clients {
+			if client.Connected {
+				payload.MessageBase.SelfId = client.XSelfID
+				jsonData, err := json.Marshal(payload)
+				if err != nil {
+					continue
+				}
+				client.Conn.SendText(string(jsonData))
+			}
+		}
 	}
 }

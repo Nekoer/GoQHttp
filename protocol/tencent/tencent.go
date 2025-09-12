@@ -3,6 +3,7 @@ package tencent
 import (
 	"GoQHttp/config"
 	"GoQHttp/logger"
+	"GoQHttp/protocol"
 	"GoQHttp/protocol/tencent/dto"
 	"bytes"
 	"crypto/ed25519"
@@ -154,7 +155,7 @@ func (qq *Tencent) Init(w http.ResponseWriter, r *http.Request, config *config.C
 				w.WriteHeader(http.StatusBadRequest)
 				_, _ = w.Write([]byte("true"))
 			} else {
-				ClientChan <- payload
+				protocol.ClientChan <- payload
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write([]byte("ok"))
 			}
@@ -192,26 +193,9 @@ func sendErrorResponse(w http.ResponseWriter, message string, statusCode int) {
 }
 
 // HandlerEvent 根据事件类型处理 webhook
-func HandlerEvent() {
-	for payload := range ClientChan {
+func (qq *Tencent) HandlerEvent() {
+	for payload := range protocol.ClientChan {
 		message, _ := json.Marshal(payload.Data)
-		//{
-		//"op":0,
-		//"id":"GROUP_AT_MESSAGE_CREATE:yit7pdisg1ugi2ejzlc2ftxchdbcvuwyprx6jusrlcb3ifop7ft9skolij8yha",
-		//"d":
-		//{
-		//"id":"ROBOT1.0_yiT7pd.iSG1ugi2eJZLC-4hjLnBZLEexTLIZboQEsNgdqRNv9EV2xw0aYNn76KurHB.MGL6iFrTqL73j.uv-O8U1msiTe5JeJMfw9nzdrjc!",
-		//"content":" lssv",
-		//"timestamp":"2025-09-08T23:13:34+08:00",
-		//"author":{"id":"0BA13D42931777D3922F226B6B5D7F13","member_openid":"0BA13D42931777D3922F226B6B5D7F13","union_openid":"0BA13D42931777D3922F226B6B5D7F13"},
-		//"group_id":"82B3406CB35C23E1071C8D6EC61C6064",
-		//"group_openid":"82B3406CB35C23E1071C8D6EC61C6064",
-		//"message_scene":{"source":"default"},
-		//"message_type":0
-		//},
-		//"t":"GROUP_AT_MESSAGE_CREATE"}
-
-		//logger.Infof("处理事件: %+v", payload)
 
 		switch payload.Type {
 		case dto.EventGroupATMessageCreate:
@@ -388,6 +372,10 @@ func HandlerEvent() {
 				if err == nil {
 					_ = GuildMemberEventHandler(payload, gm)
 				}
+			}
+		default:
+			{
+				logger.Warnf("暂未支持的事件%v", payload.Type)
 			}
 		}
 	}

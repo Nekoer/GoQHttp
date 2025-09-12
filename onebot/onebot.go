@@ -6,6 +6,114 @@ import (
 	"strings"
 )
 
+type PostType string
+
+const (
+	MessagePost   PostType = "message"
+	NoticePost    PostType = "notice"
+	RequestPost   PostType = "request"
+	MetaEventPost PostType = "meta_event"
+)
+
+// MessageBase 定义消息结构
+type MessageBase struct {
+	Time     int64    `json:"time,omitempty"`
+	SelfId   int64    `json:"self_id,omitempty"`
+	PostType PostType `json:"post_type,omitempty"`
+}
+
+type SubType string
+
+const (
+	Enable  SubType = "enable"
+	Disable SubType = "disable"
+	Connect SubType = "connect"
+	Friend  SubType = "friend"
+	Group   SubType = "group"
+	Other   SubType = "other"
+	Normal  SubType = "normal"
+)
+
+type MetaEventType string
+
+const (
+	LifecycleType MetaEventType = "lifecycle"
+	HeartbeatType MetaEventType = "heartbeat"
+)
+
+type LifeCycle struct {
+	MessageBase
+	MetaEventType MetaEventType `json:"meta_event_type"`
+	SubType       SubType       `json:"sub_type"`
+}
+
+type Status struct {
+	Online bool `json:"online"`
+	Good   bool `json:"good"`
+}
+
+type Heartbeat struct {
+	MessageBase
+	MetaEventType MetaEventType `json:"meta_event_type"`
+	Interval      int64         `json:"interval"`
+	Status        Status        `json:"status"`
+}
+
+type MessageType string
+
+const (
+	PrivateMessage MessageType = "private"
+	GroupMessage   MessageType = "group"
+)
+
+type Sex string
+
+const (
+	Male    Sex = "male"
+	Female  Sex = "female"
+	Unknown Sex = "unknown"
+)
+
+type Role string
+
+const (
+	Owner  Role = "Owner"
+	Admin  Role = "Admin"
+	Member Role = "Member"
+)
+
+type Sender struct {
+	UserId   int64  `json:"user_id"`
+	NickName string `json:"nick_name"`
+	Sex      Sex    `json:"sex"`
+	Age      int32  `json:"age"`
+	Card     string `json:"card"`
+	Area     string `json:"area"`
+	Level    string `json:"level"`
+	Role     Role   `json:"role"`
+	Title    string `json:"title"`
+}
+type NoneBotAnonymous struct {
+	Id   int64  `json:"id,omitempty"`
+	Name string `json:"name,omitempty"`
+	Flag string `json:"flag,omitempty"`
+}
+type MessageRequest struct {
+	MessageBase
+	MessageType     MessageType       `json:"message_type"`
+	SubType         SubType           `json:"sub_type,omitempty"`
+	MessageId       int32             `json:"message_id,omitempty"`
+	GroupId         int32             `json:"group_id"`
+	UserId          int64             `json:"user_id"`
+	Anonymous       *NoneBotAnonymous `json:"anonymous,omitempty"`
+	OriginalMessage string            `json:"original_message,omitempty"`
+	Message         []*Element        `json:"message"`
+	RawMessage      string            `json:"raw_message,omitempty"`
+	Font            int32             `json:"font,omitempty"`
+	Sender          Sender            `json:"sender,omitempty"`
+	AutoEscape      bool              `json:"auto_escape,omitempty"`
+}
+
 type ElementType string
 
 const (

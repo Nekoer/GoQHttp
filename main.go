@@ -2,22 +2,20 @@ package main
 
 import (
 	"GoQHttp/config"
+	"GoQHttp/constant"
 	"GoQHttp/internal"
 	"GoQHttp/logger"
-	"GoQHttp/protocol/tencent"
+	protocol "GoQHttp/protocol/tencent"
 	"GoQHttp/utils"
 	"GoQHttp/websocket"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"time"
 )
 
 var (
-	logFile       *os.File
-	configuration *config.Config
-	TencentClient websocket.Tencent
+	Client protocol.Tencent
 )
 
 // initLogger 初始化日志系统
@@ -36,8 +34,7 @@ func initLogger(config *config.Config) error {
 // webhookHandler 处理传入的 webhook 请求
 func webhookHandler(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/qq" {
-		var client tencent.Tencent
-		client.Init(w, r, configuration)
+		Client.Init(w, r, constant.Configuration)
 	}
 
 }
@@ -76,15 +73,15 @@ func main() {
 		return
 	}
 
-	configuration = config.GetConfig()
+	constant.Configuration = config.GetConfig()
 
 	// 初始化日志
-	if err := initLogger(configuration); err != nil {
-		fmt.Errorf("初始化日志失败: %v", err)
+	if err := initLogger(constant.Configuration); err != nil {
+		fmt.Println(fmt.Errorf("初始化日志失败: %v", err))
 	}
 	defer func() {
-		if logFile != nil {
-			err := logFile.Close()
+		if constant.LogFile != nil {
+			err := constant.LogFile.Close()
 			if err != nil {
 				logger.Errorf("日志关闭失败, %v", err)
 			}
@@ -97,30 +94,30 @@ func main() {
 	// 设置 HTTP 路由
 	http.HandleFunc("/health", healthHandler)
 
-	if configuration.Bot.QQ.WebhookPath != "" && configuration.Bot.QQ.Secret != "" && configuration.Bot.QQ.Id != 0 && configuration.Bot.QQ.Uid != 0 && configuration.Bot.QQ.Token != "" && configuration.Bot.QQ.ScopeType != "" {
-		err := TencentClient.Init(configuration.Bot.QQ.Id, configuration.Bot.QQ.Secret, configuration.Bot.QQ.Sandbox)
+	if constant.Configuration.Bot.QQ.WebhookPath != "" && constant.Configuration.Bot.QQ.Secret != "" && constant.Configuration.Bot.QQ.Id != 0 && constant.Configuration.Bot.QQ.Uid != 0 && constant.Configuration.Bot.QQ.Token != "" && constant.Configuration.Bot.QQ.ScopeType != "" {
+		err := constant.OpenApi.Init(constant.Configuration.Bot.QQ.Id, constant.Configuration.Bot.QQ.Secret, constant.Configuration.Bot.QQ.Sandbox)
 		if err != nil {
 			logger.Errorf("GetAppAccessToken err: %v", err)
 			return
 		}
 
-		http.HandleFunc(configuration.Bot.QQ.WebhookPath, webhookHandler)
-		go tencent.HandlerEvent()
+		http.HandleFunc(constant.Configuration.Bot.QQ.WebhookPath, webhookHandler)
+		go Client.HandlerEvent()
+		go constant.OpenApi.SendPacket()
 	}
 
-	if len(configuration.Channels) > 0 {
+	if len(constant.Configuration.Channels) > 0 {
 
-		for _, channel := range configuration.Channels {
+		for _, channel := range constant.Configuration.Channels {
 			if channel.WSReverse != nil {
 				// 反向 WebSocket
 				client := websocket.NewWebSocketClient(
 					channel.WSReverse.Universal,
-					int64(configuration.Bot.QQ.Uid),
+					int64(constant.Configuration.Bot.QQ.Uid),
 					"Universal",
 					channel.WSReverse.Authorization,
 					channel.WSReverse.ReconnectInterval,
-					configuration.Bot.QQ.Sandbox,
-					TencentClient,
+					constant.Configuration.Bot.QQ.Sandbox,
 					channel.WSReverse.MaxRetries,
 					channel.WSReverse.RetryDelay,
 				)
@@ -131,21 +128,22 @@ func main() {
 
 		}
 		websocket.Manager.StartAll()
+		go websocket.Manager.Broadcast()
 	}
 
 	// 创建带超时的 HTTP 服务器
 	server := &http.Server{
-		Addr:         ":" + configuration.Server.Port,
-		ReadTimeout:  time.Duration(configuration.Server.Timeout) * time.Second,
-		WriteTimeout: time.Duration(configuration.Server.Timeout) * time.Second,
+		Addr:         ":" + constant.Configuration.Server.Port,
+		ReadTimeout:  time.Duration(constant.Configuration.Server.Timeout) * time.Second,
+		WriteTimeout: time.Duration(constant.Configuration.Server.Timeout) * time.Second,
 	}
 
 	// 启动服务器
-	logger.Infof("服务器监听端口 %s", configuration.Server.Port)
-	logger.Infof("QQ Webhook 监听地址: %s", configuration.Bot.QQ.WebhookPath)
-	logger.Infof("日志级别: %s", configuration.Logging.Level)
-	if configuration.Logging.FilePath != "" {
-		logger.Infof("日志文件: %s", configuration.Logging.FilePath)
+	logger.Infof("服务器监听端口 %s", constant.Configuration.Server.Port)
+	logger.Infof("QQ Webhook 监听地址: %s", constant.Configuration.Bot.QQ.WebhookPath)
+	logger.Infof("日志级别: %s", constant.Configuration.Logging.Level)
+	if constant.Configuration.Logging.FilePath != "" {
+		logger.Infof("日志文件: %s", constant.Configuration.Logging.FilePath)
 	}
 
 	if err := server.ListenAndServe(); err != nil {
