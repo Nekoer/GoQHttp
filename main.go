@@ -2,6 +2,7 @@ package main
 
 import (
 	"GoQHttp/config"
+	"GoQHttp/internal"
 	"GoQHttp/logger"
 	"GoQHttp/protocol/tencent"
 	"GoQHttp/utils"
@@ -56,7 +57,19 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(response)
 }
 
+func displayBanner() {
+	fmt.Println(" ██████   ██████   ██████  ██   ██ ████████ ████████ ██████  ")
+	fmt.Println("██       ██    ██ ██    ██ ██   ██    ██       ██    ██   ██ ")
+	fmt.Println("██   ███ ██    ██ ██    ██ ███████    ██       ██    ██████  ")
+	fmt.Println("██    ██ ██    ██ ██ ▄▄ ██ ██   ██    ██       ██    ██      ")
+	fmt.Println(" ██████   ██████   ██████  ██   ██    ██       ██    ██      ")
+	fmt.Println("                      ▀▀                                     ")
+	fmt.Println("                                                             ")
+	fmt.Println(fmt.Sprintf("Project Version: %v", internal.Version))
+}
+
 func main() {
+	displayBanner()
 	// 加载配置
 	err := config.LoadConfig("config.yml")
 	if err != nil {
