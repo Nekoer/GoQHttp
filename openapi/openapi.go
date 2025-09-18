@@ -147,6 +147,7 @@ func (o *OpenApi) Upload(file string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	logger.Errorf("%+v", uploadResponse)
 
 	if uploadResponse.Success == false {
 		return "", fmt.Errorf("图床上传失败")
@@ -250,8 +251,17 @@ func (o *OpenApi) SendGroupMessage(data *onebot.MessageRequest) {
 		var groupMessageToCreate *dto.GroupMessageToCreate
 		seq := o.NextAsyncID()
 		if element.ElementType == onebot.TextType {
+			marshal, err := json.Marshal(element.Data)
+			if err != nil {
+				return
+			}
+			var text onebot.Text
+			err = json.Unmarshal(marshal, &text)
+			if err != nil {
+				return
+			}
 			groupMessageToCreate = &dto.GroupMessageToCreate{
-				Content:          element.Data.Text,
+				Content:          text.Text,
 				MsgType:          dto.C2CMsgTypeText,
 				Markdown:         nil,
 				Keyboard:         nil,
@@ -264,7 +274,16 @@ func (o *OpenApi) SendGroupMessage(data *onebot.MessageRequest) {
 				MsgReq:           uint(seq),
 			}
 		} else if element.ElementType == onebot.ImageType {
-			file, err := o.UploadFile(element.Data.Image.File, GroupId)
+			marshal, err := json.Marshal(element.Data)
+			if err != nil {
+				return
+			}
+			var image onebot.Image
+			err = json.Unmarshal(marshal, &image)
+			if err != nil {
+				return
+			}
+			file, err := o.UploadFile(image.File, GroupId)
 			if err != nil {
 				logger.Errorf("UploadFile err: %v", err)
 				return

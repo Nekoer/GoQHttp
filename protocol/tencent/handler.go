@@ -133,16 +133,14 @@ func GroupAtMessageEventHandler(event *dto.Payload, data *dto.GroupATMessageData
 			}
 			messages = append(messages, &onebot.Element{
 				ElementType: onebot.ImageType,
-				Data: &onebot.Message{
-					Image: image,
-				},
+				Data:        image,
 			})
 			imageIndex += 1
 			rawMessages = append(rawMessages, image.String())
 		} else {
 			messages = append(messages, &onebot.Element{
 				ElementType: onebot.TextType,
-				Data: &onebot.Message{
+				Data: &onebot.Text{
 					Text: message,
 				},
 			})

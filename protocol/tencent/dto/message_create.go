@@ -38,7 +38,7 @@ type GroupMessageToCreate = C2CMessageToCreate
 
 // C2CMessageToCreate 创建人人、群消息的结构体定义
 type C2CMessageToCreate struct {
-	Content          string                    `json:"content"`
+	Content          any                       `json:"content"`
 	MsgType          C2CMsgType                `json:"msg_type"`
 	Markdown         *Markdown                 `json:"markdown,omitempty"`
 	Keyboard         *keyboard.MessageKeyboard `json:"keyboard,omitempty"` // 消息按钮组件

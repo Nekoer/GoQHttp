@@ -107,7 +107,7 @@ type MessageRequest struct {
 	UserId          int64             `json:"user_id"`
 	Anonymous       *NoneBotAnonymous `json:"anonymous,omitempty"`
 	OriginalMessage string            `json:"original_message,omitempty"`
-	Message         []*Element        `json:"message"`
+	Message         []*Element        `json:"message,omitempty"`
 	RawMessage      string            `json:"raw_message,omitempty"`
 	Font            int32             `json:"font,omitempty"`
 	Sender          Sender            `json:"sender,omitempty"`
@@ -140,34 +140,37 @@ const (
 )
 
 type Element struct {
-	ElementType ElementType `json:"type"`
-	Data        *Message    `json:"data"`
+	ElementType ElementType `json:"type,omitempty"`
+	Data        Message     `json:"data,omitempty"`
 }
 
-type Message struct {
-	Text        string      `json:"text,omitempty"`
-	Face        Face        `json:"face,omitempty"`
-	Image       Image       `json:"image,omitempty"`
-	Record      Record      `json:"record,omitempty"`
-	Video       Video       `json:"video,omitempty"`
-	At          At          `json:"at,omitempty"`
-	Rps         Rps         `json:"rps,omitempty"`
-	Dice        Dice        `json:"dice,omitempty"`
-	Shake       Shake       `json:"shake,omitempty"`
-	Poke        Poke        `json:"poke,omitempty"`
-	Anonymous   Anonymous   `json:"anonymous,omitempty"`
-	Share       Share       `json:"share,omitempty"`
-	Contact     Contact     `json:"contact,omitempty"`
-	Location    Location    `json:"location,omitempty"`
-	Music       Music       `json:"music,omitempty"`
-	CustomMusic CustomMusic `json:"customMusic,omitempty"`
-	Reply       Reply       `json:"reply,omitempty"`
-	Forward     Forward     `json:"forward,omitempty"`
-	Node        Node        `json:"node,omitempty"`
-	MergeNode   MergeNode   `json:"mergeNode,omitempty"`
-	Xml         Xml         `json:"xml,omitempty"`
-	Json        Json        `json:"json,omitempty"`
+type Message interface {
 }
+
+//type Message struct {
+//	Text        string      `json:"text,omitempty"`
+//	Face        Face        `json:"face,omitempty"`
+//	Image       Image       `json:"image,omitempty"`
+//	Record      Record      `json:"record,omitempty"`
+//	Video       Video       `json:"video,omitempty"`
+//	At          At          `json:"at,omitempty"`
+//	Rps         Rps         `json:"rps,omitempty"`
+//	Dice        Dice        `json:"dice,omitempty"`
+//	Shake       Shake       `json:"shake,omitempty"`
+//	Poke        Poke        `json:"poke,omitempty"`
+//	Anonymous   Anonymous   `json:"anonymous,omitempty"`
+//	Share       Share       `json:"share,omitempty"`
+//	Contact     Contact     `json:"contact,omitempty"`
+//	Location    Location    `json:"location,omitempty"`
+//	Music       Music       `json:"music,omitempty"`
+//	CustomMusic CustomMusic `json:"customMusic,omitempty"`
+//	Reply       Reply       `json:"reply,omitempty"`
+//	Forward     Forward     `json:"forward,omitempty"`
+//	Node        Node        `json:"node,omitempty"`
+//	MergeNode   MergeNode   `json:"mergeNode,omitempty"`
+//	Xml         Xml         `json:"xml,omitempty"`
+//	Json        Json        `json:"json,omitempty"`
+//}
 
 // CQEscape 转义CQ码中的特殊字符
 func CQEscape(s string) string {
@@ -189,6 +192,7 @@ func CQEscape(s string) string {
 }
 
 type Face struct {
+	Message
 	Id string `json:"id,omitempty"`
 }
 
@@ -196,7 +200,13 @@ func (f Face) String() string {
 	return fmt.Sprintf("[CQ:face,id=%s]", f.Id)
 }
 
+type Text struct {
+	Message
+	Text string `json:"text,omitempty"`
+}
+
 type Image struct {
+	Message
 	File    string `json:"file,omitempty"`
 	Type    string `json:"type,omitempty"`
 	Url     string `json:"url,omitempty"`
@@ -213,6 +223,7 @@ func (f Image) String() string {
 }
 
 type Record struct {
+	Message
 	File    string `json:"file,omitempty"`
 	Magic   int    `json:"magic,omitempty"`
 	Url     string `json:"url,omitempty"`
@@ -229,6 +240,7 @@ func (f Record) String() string {
 }
 
 type Video struct {
+	Message
 	File    string `json:"file,omitempty"`
 	Url     string `json:"url,omitempty"`
 	Cache   int    `json:"cache,omitempty"`
@@ -244,6 +256,7 @@ func (f Video) String() string {
 }
 
 type At struct {
+	Message
 	Uid string `json:"qq,omitempty"`
 }
 
@@ -252,6 +265,7 @@ func (f At) String() string {
 }
 
 type Rps struct {
+	Message
 }
 
 func (f Rps) String() string {
@@ -259,6 +273,7 @@ func (f Rps) String() string {
 }
 
 type Dice struct {
+	Message
 }
 
 func (f Dice) String() string {
@@ -266,6 +281,7 @@ func (f Dice) String() string {
 }
 
 type Shake struct {
+	Message
 }
 
 func (f Shake) String() string {
@@ -273,6 +289,7 @@ func (f Shake) String() string {
 }
 
 type Poke struct {
+	Message
 	Type string `json:"type,omitempty"`
 	Id   string `json:"id,omitempty"`
 }
@@ -282,6 +299,7 @@ func (f Poke) String() string {
 }
 
 type Anonymous struct {
+	Message
 	Ignore int `json:"ignore,omitempty"`
 }
 
@@ -290,6 +308,7 @@ func (f Anonymous) String() string {
 }
 
 type Share struct {
+	Message
 	Url     string `json:"url,omitempty"`
 	Title   string `json:"title,omitempty"`
 	Content string `json:"content,omitempty"`
@@ -305,6 +324,7 @@ func (f Share) String() string {
 }
 
 type Contact struct {
+	Message
 	Type string `json:"type,omitempty"`
 	Id   string `json:"id,omitempty"`
 }
@@ -314,6 +334,7 @@ func (f Contact) String() string {
 }
 
 type Location struct {
+	Message
 	Lat     string `json:"lat,omitempty"`
 	Lon     string `json:"lon,omitempty"`
 	Title   string `json:"title,omitempty"`
@@ -329,6 +350,7 @@ func (f Location) String() string {
 }
 
 type Music struct {
+	Message
 	Type string `json:"type,omitempty"`
 	Id   string `json:"id,omitempty"`
 }
@@ -338,6 +360,7 @@ func (f Music) String() string {
 }
 
 type CustomMusic struct {
+	Message
 	Type    string `json:"type,omitempty"`
 	Url     string `json:"url,omitempty"`
 	Audio   string `json:"audio,omitempty"`
@@ -357,6 +380,7 @@ func (f CustomMusic) String() string {
 }
 
 type Reply struct {
+	Message
 	Id string `json:"id,omitempty"`
 }
 
@@ -365,6 +389,7 @@ func (f Reply) String() string {
 }
 
 type Forward struct {
+	Message
 	Id string `json:"id,omitempty"`
 }
 
@@ -373,6 +398,7 @@ func (f Forward) String() string {
 }
 
 type Node struct {
+	Message
 	Id string `json:"id,omitempty"`
 }
 
@@ -381,6 +407,7 @@ func (f Node) String() string {
 }
 
 type MergeNode struct {
+	Message
 	UserId   string      `json:"user_id,omitempty"`
 	NickName string      `json:"nick_name,omitempty"`
 	Content  interface{} `json:"content,omitempty"`
@@ -397,6 +424,7 @@ func (f MergeNode) String() string {
 }
 
 type Xml struct {
+	Message
 	Data string `json:"data,omitempty"`
 }
 
@@ -405,6 +433,7 @@ func (f Xml) String() string {
 }
 
 type Json struct {
+	Message
 	Data string `json:"data,omitempty"`
 }
 

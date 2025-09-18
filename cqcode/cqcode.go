@@ -78,7 +78,7 @@ func (c *CQCode) ParseAllCQCodes(text string) ([]*onebot.Element, error) {
 				text := code.Params["text"]
 				messages = append(messages, &onebot.Element{
 					ElementType: onebot.TextType,
-					Data: &onebot.Message{
+					Data: onebot.Text{
 						Text: text,
 					},
 				})
@@ -88,10 +88,8 @@ func (c *CQCode) ParseAllCQCodes(text string) ([]*onebot.Element, error) {
 				file := code.Params["file"]
 				messages = append(messages, &onebot.Element{
 					ElementType: onebot.ImageType,
-					Data: &onebot.Message{
-						Image: onebot.Image{
-							File: file,
-						},
+					Data: onebot.Image{
+						File: file,
 					},
 				})
 			}

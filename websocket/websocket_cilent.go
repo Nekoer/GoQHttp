@@ -44,11 +44,10 @@ type ClientManager struct {
 }
 
 type Request struct {
-	Action string `json:"action"`
-	Params any    `json:"params"`
-	Echo   string `json:"echo"`
+	Action string      `json:"action"`
+	Params any         `json:"params"`
+	Echo   interface{} `json:"echo"`
 }
-
 type Response struct {
 	Status  string `json:"status"`  // 执行状态，必须是 ok、failed 中的一个
 	Code    int64  `json:"retcode"` // 返回码
@@ -227,6 +226,7 @@ func (c *Client) SendMessage(data string) {
 
 // handleMessage 处理接收到的消息
 func (c *Client) handleMessage(message []byte) {
+	logger.Debugf("%s 接收数据 %s", c.URL, string(message))
 	var request Request
 	err := json.Unmarshal(message, &request)
 	if err != nil {
@@ -236,11 +236,13 @@ func (c *Client) handleMessage(message []byte) {
 
 	var messageRequest *onebot.MessageRequest
 	marshal, err := json.Marshal(request.Params)
+
 	if err != nil {
 		return
 	}
-
+	// onebot v11
 	err = json.Unmarshal(marshal, &messageRequest)
+
 	if err != nil {
 		messages, err := constant.CQCode.ParseAllCQCodes(string(marshal))
 		if err != nil {
@@ -249,6 +251,7 @@ func (c *Client) handleMessage(message []byte) {
 
 		messageRequest.Message = messages
 	}
+
 	// 根据消息类型处理
 	switch messageRequest.PostType {
 	case onebot.NoticePost:
