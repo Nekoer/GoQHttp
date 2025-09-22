@@ -262,6 +262,12 @@ func (o *OpenApi) SendGroupMessage(data *onebot.MessageRequest) {
 			if err != nil {
 				continue
 			}
+			// 判断是否是单空格内容
+			var tempStr = strings.TrimSpace(text.Text)
+			if tempStr == "" {
+				continue
+			}
+
 			groupMessageToCreate = &dto.GroupMessageToCreate{
 				Content:          text.Text,
 				MsgType:          dto.C2CMsgTypeText,
