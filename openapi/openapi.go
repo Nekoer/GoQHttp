@@ -249,19 +249,18 @@ func (o *OpenApi) SendGroupMessage(data *onebot.MessageRequest) {
 		logger.Errorf("DBUtil.GetGroupMessageID err: %v", err)
 		return
 	}
-
 	for _, element := range data.Message {
 		var groupMessageToCreate *dto.GroupMessageToCreate
 		seq := o.NextAsyncID()
 		if element.ElementType == onebot.TextType {
 			marshal, err := json.Marshal(element.Data)
 			if err != nil {
-				return
+				continue
 			}
 			var text onebot.Text
 			err = json.Unmarshal(marshal, &text)
 			if err != nil {
-				return
+				continue
 			}
 			groupMessageToCreate = &dto.GroupMessageToCreate{
 				Content:          text.Text,
@@ -279,17 +278,17 @@ func (o *OpenApi) SendGroupMessage(data *onebot.MessageRequest) {
 		} else if element.ElementType == onebot.ImageType {
 			marshal, err := json.Marshal(element.Data)
 			if err != nil {
-				return
+				continue
 			}
 			var image onebot.Image
 			err = json.Unmarshal(marshal, &image)
 			if err != nil {
-				return
+				continue
 			}
 			file, err := o.UploadFile(image.File, GroupId)
 			if err != nil {
 				logger.Errorf("UploadFile err: %v", err)
-				return
+				continue
 			}
 			logger.Debugf("UploadFile : %+v", file)
 
@@ -310,22 +309,23 @@ func (o *OpenApi) SendGroupMessage(data *onebot.MessageRequest) {
 			}
 		} else {
 			logger.Warnf("暂不支持的消息类型: %s", element.ElementType)
+			continue
 		}
 
 		if groupMessageToCreate == nil {
 			logger.Warnf("群消息构建失败")
-			return
+			continue
 		}
 
 		sendData, err := json.Marshal(groupMessageToCreate)
 		if err != nil {
 			logger.Errorf("json Marshal err: %v", err)
-			return
+			continue
 		}
 		r, err := http.NewRequest("POST", fmt.Sprintf("%s/v2/groups/%s/messages", ApiUrl, GroupId), bytes.NewBuffer(sendData))
 		if err != nil {
 			logger.Errorf("Error creating request: %v", err)
-			return
+			continue
 		}
 
 		r.Header = http.Header{
@@ -338,7 +338,7 @@ func (o *OpenApi) SendGroupMessage(data *onebot.MessageRequest) {
 		resp, err := client.Do(r)
 		if err != nil {
 			logger.Errorf("Error sending request: %v", err)
-			return
+			continue
 		}
 		defer resp.Body.Close()
 

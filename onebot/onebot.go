@@ -84,7 +84,7 @@ const (
 
 type Sender struct {
 	UserId   int64  `json:"user_id"`
-	NickName string `json:"nick_name"`
+	NickName string `json:"nickname"`
 	Sex      Sex    `json:"sex"`
 	Age      int32  `json:"age"`
 	Card     string `json:"card"`
@@ -106,7 +106,7 @@ type MessageRequest struct {
 	GroupId         int32             `json:"group_id"`
 	UserId          int64             `json:"user_id"`
 	Anonymous       *NoneBotAnonymous `json:"anonymous,omitempty"`
-	OriginalMessage string            `json:"original_message,omitempty"`
+	OriginalMessage []*Element        `json:"original_message,omitempty"`
 	Message         []*Element        `json:"message,omitempty"`
 	RawMessage      string            `json:"raw_message,omitempty"`
 	Font            int32             `json:"font,omitempty"`
