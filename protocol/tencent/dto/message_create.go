@@ -63,7 +63,7 @@ type C2CRichMediaMessageToCreate struct {
 	FileType   int    `json:"file_type"`
 	Url        string `json:"url"`
 	SrvSendMsg bool   `json:"srv_send_msg"`
-	FileData   []byte `json:"file_data"`
+	FileData   string `json:"file_data"`
 }
 
 // MessageReference 引用消息

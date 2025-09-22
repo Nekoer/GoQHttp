@@ -15,7 +15,7 @@ bot:
     token: token
 # 日志配置
 logging:
-  level: debug
+  level: info
   file_path: ./webhook.log
   add_source: true
   json: false

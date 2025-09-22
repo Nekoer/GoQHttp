@@ -96,6 +96,7 @@ func (o *OpenApi) NextAsyncID() int64 {
 	return newID
 }
 
+// Upload 第三方上传群图片方式
 func (o *OpenApi) Upload(file string) (string, error) {
 
 	file = strings.Replace(file, "base64://", "", -1)
@@ -109,7 +110,7 @@ func (o *OpenApi) Upload(file string) (string, error) {
 	bodyWriter := multipart.NewWriter(bodyBuf)
 
 	// 创建表单文件字段
-	fileWriter, err := bodyWriter.CreateFormFile("image", "group.jpeg") // "uploadfile"是表单字段名，filename是服务器收到的文件名
+	fileWriter, err := bodyWriter.CreateFormFile("image", "group.jpeg")
 	if err != nil {
 		return "", fmt.Errorf("创建表单文件字段失败: %v", err)
 	}
@@ -156,19 +157,21 @@ func (o *OpenApi) Upload(file string) (string, error) {
 	return uploadResponse.Url, nil
 }
 
+// UploadFile 本地上传base64图片
 func (o *OpenApi) UploadFile(file string, groupId string) (*dto.RichMediaMsgResp, error) {
 
 	//encoded, _ := base64.StdEncoding.DecodeString(file)
-	upload, err := o.Upload(file)
-	if err != nil {
-		return nil, err
-	}
+	//upload, err := o.Upload(file)
+	//if err != nil {
+	//	return nil, err
+	//}
+
+	tmpFile := strings.Replace(file, "base64://", "", -1)
 
 	var groupRichMediaMessageToCreate = dto.GroupRichMediaMessageToCreate{
 		FileType:   1,
-		Url:        upload,
 		SrvSendMsg: false,
-		FileData:   nil,
+		FileData:   tmpFile,
 	}
 
 	sendData, err := json.Marshal(groupRichMediaMessageToCreate)
