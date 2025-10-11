@@ -96,6 +96,18 @@ func (o *OpenApi) NextAsyncID() int64 {
 	return newID
 }
 
+func IsImageURL(url string) bool {
+	imageExtensions := []string{".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg"}
+	lowerURL := strings.ToLower(url)
+
+	for _, ext := range imageExtensions {
+		if strings.HasSuffix(lowerURL, ext) {
+			return true
+		}
+	}
+	return false
+}
+
 // Upload 第三方上传群图片方式
 func (o *OpenApi) Upload(file string) (string, error) {
 
@@ -165,13 +177,20 @@ func (o *OpenApi) UploadFile(file string, groupId string) (*dto.RichMediaMsgResp
 	//if err != nil {
 	//	return nil, err
 	//}
-
-	tmpFile := strings.Replace(file, "base64://", "", -1)
-
-	var groupRichMediaMessageToCreate = dto.GroupRichMediaMessageToCreate{
-		FileType:   1,
-		SrvSendMsg: false,
-		FileData:   tmpFile,
+	var groupRichMediaMessageToCreate dto.GroupRichMediaMessageToCreate
+	if IsImageURL(file) {
+		groupRichMediaMessageToCreate = dto.GroupRichMediaMessageToCreate{
+			Url:        file,
+			FileType:   1,
+			SrvSendMsg: false,
+		}
+	} else {
+		tmpFile := strings.Replace(file, "base64://", "", -1)
+		groupRichMediaMessageToCreate = dto.GroupRichMediaMessageToCreate{
+			FileType:   1,
+			SrvSendMsg: false,
+			FileData:   tmpFile,
+		}
 	}
 
 	sendData, err := json.Marshal(groupRichMediaMessageToCreate)
@@ -223,7 +242,7 @@ func (o *OpenApi) SendPacket() {
 				logger.Errorf("SendPacket json: %v", err)
 				return
 			}
-			logger.Warnf("暂不支持的数据包: %v", marshal)
+			logger.Warnf("暂不支持的数据包: %+v", marshal)
 		}
 
 	}
