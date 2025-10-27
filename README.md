@@ -8,6 +8,14 @@
 ### 注意事项
 官方机器人由于唯一身份机制`OpenID`，需框架内部维护id发送到`onebot`，因此您获得的`用户ID`、`群ID`和`MessageID`都是`框架ID`。
 
+### 协议
+
+| 平台       | 协议        | 说明  |
+|----------|-----------|-----|
+| QQ       | WebHook   | 已完成 |
+| Kook     | WebSocket | 开发中 |
+| Telegram | WebSocket | 未开发 |
+
 ### 接口
 - [ ] HTTP API
 - [ ] 反向 HTTP POST
