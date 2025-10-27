@@ -2,12 +2,12 @@ package main
 
 import (
 	"GoQHttp/config"
-	"GoQHttp/constant"
 	"GoQHttp/internal"
+	"GoQHttp/internal/constant"
+	protocol "GoQHttp/internal/protocol/tencent"
 	"GoQHttp/logger"
-	protocol "GoQHttp/protocol/tencent"
 	"GoQHttp/utils"
-	"GoQHttp/websocket"
+	"GoQHttp/websocket/client"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	Client protocol.Tencent
+	QQClient protocol.Tencent
 )
 
 // initLogger 初始化日志系统
@@ -34,7 +34,7 @@ func initLogger(config *config.Config) error {
 // webhookHandler 处理传入的 webhook 请求
 func webhookHandler(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/qq" {
-		Client.Init(w, r, constant.Configuration)
+		QQClient.Init(w, r, constant.Configuration)
 	}
 
 }
@@ -94,24 +94,39 @@ func main() {
 	// 设置 HTTP 路由
 	http.HandleFunc("/health", healthHandler)
 
-	if constant.Configuration.Bot.QQ.WebhookPath != "" && constant.Configuration.Bot.QQ.Secret != "" && constant.Configuration.Bot.QQ.Id != 0 && constant.Configuration.Bot.QQ.Uid != 0 && constant.Configuration.Bot.QQ.Token != "" && constant.Configuration.Bot.QQ.ScopeType != "" {
-		err := constant.OpenApi.Init(constant.Configuration.Bot.QQ.Id, constant.Configuration.Bot.QQ.Secret, constant.Configuration.Bot.QQ.Sandbox)
-		if err != nil {
-			logger.Errorf("GetAppAccessToken err: %v", err)
-			return
-		}
+	if constant.Configuration.Bot.QQ.Enable {
+		// 启动 QQ官方
+		if constant.Configuration.Bot.QQ.WebhookPath != "" && constant.Configuration.Bot.QQ.Secret != "" && constant.Configuration.Bot.QQ.Id != 0 && constant.Configuration.Bot.QQ.Uid != 0 && constant.Configuration.Bot.QQ.Token != "" && constant.Configuration.Bot.QQ.ScopeType != "" {
+			err := constant.OpenApi.Init(constant.Configuration.Bot.QQ.Id, constant.Configuration.Bot.QQ.Secret, constant.Configuration.Bot.QQ.Sandbox)
+			if err != nil {
+				logger.Errorf("GetAppAccessToken err: %v", err)
+				return
+			}
 
-		http.HandleFunc(constant.Configuration.Bot.QQ.WebhookPath, webhookHandler)
-		go Client.HandlerEvent()
-		go constant.OpenApi.SendPacket()
+			http.HandleFunc(constant.Configuration.Bot.QQ.WebhookPath, webhookHandler)
+			go QQClient.HandlerEvent()
+			go constant.OpenApi.SendPacket()
+		} else {
+			logger.Warnf("QQ机器人启动失败,请检查设置")
+		}
 	}
 
+	if constant.Configuration.Bot.Kook.Enable {
+		if constant.Configuration.Bot.Kook.Token == "" {
+			logger.Warnf("Kook机器人启动失败,请检查设置")
+			return
+		}
+		kookClient := client.NewKookClient(constant.Configuration.Bot.Kook.Token, true)
+		go kookClient.Connect()
+	}
+
+	// 功能端对接
 	if len(constant.Configuration.Channels) > 0 {
 
 		for _, channel := range constant.Configuration.Channels {
 			if channel.WSReverse != nil {
 				// 反向 WebSocket
-				client := websocket.NewWebSocketClient(
+				NoneBotClient := client.NewNoneBotClient(
 					channel.WSReverse.Universal,
 					int64(constant.Configuration.Bot.QQ.Uid),
 					"Universal",
@@ -121,14 +136,20 @@ func main() {
 					channel.WSReverse.MaxRetries,
 					channel.WSReverse.RetryDelay,
 				)
-				websocket.Manager.AddClient(client)
+				client.NoneBotManager.AddClient(NoneBotClient)
 			} else {
+				//hub := websocket.NewHub()
+				//go hub.Run()
+				//
+				//http.HandleFunc(channel.WS.Address, func(w http.ResponseWriter, r *http.Request) {
+				//	websocket.ServeWs(hub, w, r)
+				//})
 				//TODO 正向 WebSocket
 			}
 
 		}
-		websocket.Manager.StartAll()
-		go websocket.Manager.Broadcast()
+		client.NoneBotManager.StartAll()
+		go client.NoneBotManager.Broadcast()
 	}
 
 	// 创建带超时的 HTTP 服务器

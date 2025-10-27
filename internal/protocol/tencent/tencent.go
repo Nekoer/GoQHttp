@@ -2,9 +2,9 @@ package tencent
 
 import (
 	"GoQHttp/config"
+	"GoQHttp/internal/protocol"
+	"GoQHttp/internal/protocol/tencent/dto"
 	"GoQHttp/logger"
-	"GoQHttp/protocol"
-	"GoQHttp/protocol/tencent/dto"
 	"bytes"
 	"crypto/ed25519"
 	"encoding/hex"
@@ -155,7 +155,7 @@ func (qq *Tencent) Init(w http.ResponseWriter, r *http.Request, config *config.C
 				w.WriteHeader(http.StatusBadRequest)
 				_, _ = w.Write([]byte("true"))
 			} else {
-				protocol.ClientChan <- payload
+				protocol.QQClientChan <- payload
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write([]byte("ok"))
 			}
@@ -194,7 +194,7 @@ func sendErrorResponse(w http.ResponseWriter, message string, statusCode int) {
 
 // HandlerEvent 根据事件类型处理 webhook
 func (qq *Tencent) HandlerEvent() {
-	for payload := range protocol.ClientChan {
+	for payload := range protocol.QQClientChan {
 		message, _ := json.Marshal(payload.Data)
 
 		switch payload.Type {

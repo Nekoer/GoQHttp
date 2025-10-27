@@ -1,11 +1,11 @@
 package tencent
 
 import (
-	"GoQHttp/constant"
+	"GoQHttp/internal/constant"
+	"GoQHttp/internal/onebot"
+	"GoQHttp/internal/protocol"
+	"GoQHttp/internal/protocol/tencent/dto"
 	"GoQHttp/logger"
-	"GoQHttp/onebot"
-	"GoQHttp/protocol"
-	"GoQHttp/protocol/tencent/dto"
 	"GoQHttp/utils"
 	"encoding/json"
 	"fmt"

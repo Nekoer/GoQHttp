@@ -2,8 +2,8 @@ package constant
 
 import (
 	"GoQHttp/config"
-	"GoQHttp/cqcode"
-	"GoQHttp/openapi"
+	"GoQHttp/internal/cqcode"
+	"GoQHttp/internal/openapi"
 	"os"
 )
 

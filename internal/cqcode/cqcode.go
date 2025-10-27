@@ -1,8 +1,8 @@
 package cqcode
 
 import (
-	"GoQHttp/onebot"
-	"GoQHttp/protocol/tencent/dto"
+	"GoQHttp/internal/onebot"
+	"GoQHttp/internal/protocol/tencent/dto"
 	"fmt"
 	"regexp"
 	"strings"

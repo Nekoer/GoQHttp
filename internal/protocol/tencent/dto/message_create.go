@@ -1,6 +1,8 @@
 package dto
 
-import "GoQHttp/protocol/tencent/dto/keyboard"
+import (
+	"GoQHttp/internal/protocol/tencent/dto/keyboard"
+)
 
 // MessageToCreate 发送消息结构体定义
 type MessageToCreate struct {

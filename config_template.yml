@@ -4,6 +4,7 @@ server:
   timeout: 30
 bot:
   qq:
+    enable: false
     id: appid
     uid: qq
     secret: secret
@@ -12,6 +13,10 @@ bot:
     sandbox: false
     webhook_path: /qq
   telegram:
+    enable: false
+    token: token
+  kook:
+    enable: false
     token: token
 # 日志配置
 logging:

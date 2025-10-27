@@ -1,10 +1,10 @@
-package websocket
+package client
 
 import (
-	"GoQHttp/constant"
+	"GoQHttp/internal/constant"
+	"GoQHttp/internal/onebot"
+	"GoQHttp/internal/protocol"
 	"GoQHttp/logger"
-	"GoQHttp/onebot"
-	"GoQHttp/protocol"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -18,8 +18,8 @@ import (
 	uuid "github.com/satori/go.uuid"
 )
 
-// Client 表示一个 WebSocket 客户端连接
-type Client struct {
+// NoneBotClient 表示一个 WebSocket 客户端连接
+type NoneBotClient struct {
 	ID            string
 	AppId         int
 	Secret        string
@@ -37,18 +37,18 @@ type Client struct {
 	Sandbox       bool
 }
 
-// ClientManager 管理多个 WebSocket 客户端连接
-type ClientManager struct {
-	clients map[string]*Client
+// NoneBotClientManager 管理多个 WebSocket 客户端连接
+type NoneBotClientManager struct {
+	clients map[string]*NoneBotClient
 	mu      sync.RWMutex
 }
 
-type Request struct {
+type NoneBotRequest struct {
 	Action string      `json:"action"`
 	Params any         `json:"params"`
 	Echo   interface{} `json:"echo"`
 }
-type Response struct {
+type NoneBotResponse struct {
 	Status  string `json:"status"`  // 执行状态，必须是 ok、failed 中的一个
 	Code    int64  `json:"retcode"` // 返回码
 	Data    any    `json:"data"`    // 响应数据
@@ -57,20 +57,19 @@ type Response struct {
 }
 
 var (
-	Manager *ClientManager
+	NoneBotManager *NoneBotClientManager
 )
 
 func init() {
-	Manager = &ClientManager{
-		clients: make(map[string]*Client),
+	NoneBotManager = &NoneBotClientManager{
+		clients: make(map[string]*NoneBotClient),
 	}
 }
 
-// NewWebSocketClient 创建新的 WebSocket 客户端
-func NewWebSocketClient(url string, xSelfID int64, xClientRole string, authorization string, interval int64, sandbox bool, maxRetries int64, retryDelay int64) *Client {
-
-	return &Client{
-		ID:            generateID(),
+// NewNoneBotClient 创建新的 WebSocket 客户端
+func NewNoneBotClient(url string, xSelfID int64, xClientRole string, authorization string, interval int64, sandbox bool, maxRetries int64, retryDelay int64) *NoneBotClient {
+	return &NoneBotClient{
+		ID:            generateNoneBotClientID(),
 		URL:           url,
 		Connected:     false,
 		MaxRetries:    maxRetries,
@@ -85,12 +84,12 @@ func NewWebSocketClient(url string, xSelfID int64, xClientRole string, authoriza
 }
 
 // generateID 生成唯一客户端 ID
-func generateID() string {
-	return fmt.Sprintf("client-%d", uuid.NewV4())
+func generateNoneBotClientID() string {
+	return fmt.Sprintf("NoneBotClient-%d", uuid.NewV4())
 }
 
 // Connect 连接到 WebSocket 服务器
-func (c *Client) Connect() {
+func (c *NoneBotClient) Connect() {
 	logger.Infof("尝试连接到: %s", c.URL)
 
 	// 解析 URL
@@ -155,7 +154,7 @@ func (c *Client) Connect() {
 	}
 }
 
-func (c *Client) Daemon() {
+func (c *NoneBotClient) Daemon() {
 	for {
 		if c.MaxRetries != 0 {
 			if c.RetryCount >= c.MaxRetries && c.MaxRetries > 0 {
@@ -179,7 +178,7 @@ func (c *Client) Daemon() {
 	}
 }
 
-func (c *Client) LifeCycle() {
+func (c *NoneBotClient) LifeCycle() {
 	c.mu.Lock()
 	lifeCycle := onebot.LifeCycle{
 		MessageBase: onebot.MessageBase{
@@ -195,7 +194,7 @@ func (c *Client) LifeCycle() {
 	c.mu.Unlock()
 }
 
-func (c *Client) HeartBeat() {
+func (c *NoneBotClient) HeartBeat() {
 	c.mu.Lock()
 	heartbeat := onebot.Heartbeat{
 		MessageBase: onebot.MessageBase{
@@ -215,7 +214,7 @@ func (c *Client) HeartBeat() {
 	c.mu.Unlock()
 }
 
-func (c *Client) SendMessage(data string) {
+func (c *NoneBotClient) SendMessage(data string) {
 	c.mu.Lock()
 	logger.Debug(data)
 	if c.Connected {
@@ -225,9 +224,9 @@ func (c *Client) SendMessage(data string) {
 }
 
 // handleMessage 处理接收到的消息
-func (c *Client) handleMessage(message []byte) {
+func (c *NoneBotClient) handleMessage(message []byte) {
 	logger.Debugf("%s 接收数据 %s", c.URL, string(message))
-	var request Request
+	var request NoneBotRequest
 	err := json.Unmarshal(message, &request)
 	if err != nil {
 		logger.Warnf("无法解析消息: %v", err)
@@ -255,18 +254,20 @@ func (c *Client) handleMessage(message []byte) {
 	// 根据消息类型处理
 	switch messageRequest.PostType {
 	case onebot.NoticePost:
-		logger.Infof("[%s] 通知事件: %v\n", c.URL, string(message))
+		logger.Infof("[%s] 通知事件: %v", c.URL, string(message))
 	case onebot.RequestPost:
-		logger.Infof("[%s] 请求事件: %v\n", c.URL, string(message))
+		logger.Infof("[%s] 请求事件: %v", c.URL, string(message))
 	case onebot.MessagePost:
+		protocol.QQOfficialChan <- messageRequest
+		logger.Infof("[%s] 消息事件: %s", c.URL, string(message))
 	default:
-		protocol.OfficialChan <- messageRequest
-		logger.Infof("[%s] 消息事件: %s\n", c.URL, string(message))
+		protocol.QQOfficialChan <- messageRequest
+		logger.Infof("[%s] 消息事件: %s", c.URL, string(message))
 	}
 }
 
 // Close 关闭连接
-func (c *Client) Close() {
+func (c *NoneBotClient) Close() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -279,14 +280,14 @@ func (c *Client) Close() {
 }
 
 // AddClient 添加客户端到管理器
-func (m *ClientManager) AddClient(client *Client) {
+func (m *NoneBotClientManager) AddClient(client *NoneBotClient) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.clients[client.ID] = client
 }
 
 // RemoveClient 从管理器移除客户端
-func (m *ClientManager) RemoveClient(clientID string) {
+func (m *NoneBotClientManager) RemoveClient(clientID string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if client, exists := m.clients[clientID]; exists {
@@ -296,7 +297,7 @@ func (m *ClientManager) RemoveClient(clientID string) {
 }
 
 // GetClient 获取指定客户端
-func (m *ClientManager) GetClient(clientID string) (*Client, bool) {
+func (m *NoneBotClientManager) GetClient(clientID string) (*NoneBotClient, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	client, exists := m.clients[clientID]
@@ -304,10 +305,10 @@ func (m *ClientManager) GetClient(clientID string) (*Client, bool) {
 }
 
 // GetAllClients 获取所有客户端
-func (m *ClientManager) GetAllClients() []*Client {
+func (m *NoneBotClientManager) GetAllClients() []*NoneBotClient {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	clients := make([]*Client, 0, len(m.clients))
+	clients := make([]*NoneBotClient, 0, len(m.clients))
 	for _, client := range m.clients {
 		clients = append(clients, client)
 	}
@@ -315,16 +316,16 @@ func (m *ClientManager) GetAllClients() []*Client {
 }
 
 // CloseAll 关闭所有客户端连接
-func (m *ClientManager) CloseAll() {
+func (m *NoneBotClientManager) CloseAll() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, client := range m.clients {
 		client.Close()
 	}
-	m.clients = make(map[string]*Client)
+	m.clients = make(map[string]*NoneBotClient)
 }
 
-func (m *ClientManager) StartAll() {
+func (m *NoneBotClientManager) StartAll() {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	for _, client := range m.clients {
@@ -333,7 +334,7 @@ func (m *ClientManager) StartAll() {
 }
 
 // Broadcast 向所有连接的客户端广播消息
-func (m *ClientManager) Broadcast() {
+func (m *NoneBotClientManager) Broadcast() {
 	for payload := range protocol.BroadcastChan {
 		for _, client := range m.clients {
 			if client.Connected {

@@ -19,6 +19,7 @@ type Logging struct {
 }
 
 type QQ struct {
+	Enable      bool   `yaml:"enable"`
 	Id          int    `yaml:"id"`
 	Uid         int    `yaml:"uid"`
 	Secret      string `yaml:"secret"`
@@ -29,12 +30,18 @@ type QQ struct {
 }
 
 type Telegram struct {
-	Token string `yaml:"token"`
+	Enable bool   `yaml:"enable"`
+	Token  string `yaml:"token"`
 }
 
+type Kook struct {
+	Enable bool   `yaml:"enable"`
+	Token  string `yaml:"token"`
+}
 type Bot struct {
 	QQ       QQ       `yaml:"qq"`
 	Telegram Telegram `yaml:"telegram"`
+	Kook     Kook     `yaml:"kook"`
 }
 
 // Channel 表示单个服务器配置
@@ -70,7 +77,6 @@ type Config struct {
 var config Config
 
 func WriteConfig(filename string) {
-
 	config = Config{
 		Server: Server{
 			Port:    "8080",
@@ -84,6 +90,7 @@ func WriteConfig(filename string) {
 		},
 		Bot: Bot{
 			QQ: QQ{
+				Enable:      false,
 				Id:          1,
 				Uid:         1,
 				Secret:      "",
@@ -93,7 +100,12 @@ func WriteConfig(filename string) {
 				WebhookPath: "/qq",
 			},
 			Telegram: Telegram{
-				Token: "",
+				Enable: false,
+				Token:  "",
+			},
+			Kook: Kook{
+				Enable: false,
+				Token:  "",
 			},
 		},
 		Channels: []Channel{

@@ -1,10 +1,10 @@
 package openapi
 
 import (
+	"GoQHttp/internal/onebot"
+	"GoQHttp/internal/protocol"
+	dto2 "GoQHttp/internal/protocol/tencent/dto"
 	"GoQHttp/logger"
-	"GoQHttp/onebot"
-	"GoQHttp/protocol"
-	"GoQHttp/protocol/tencent/dto"
 	"GoQHttp/utils"
 	"bytes"
 	"encoding/base64"
@@ -49,7 +49,7 @@ func (o *OpenApi) Init(appId int, secret string, sandbox bool) error {
 }
 
 func getAppAccessToken() error {
-	atRequest := dto.GetAccessTokenReq{
+	atRequest := dto2.GetAccessTokenReq{
 		AppID:        strconv.Itoa(TencentAppId),
 		ClientSecret: TencentSecret,
 	}
@@ -68,7 +68,7 @@ func getAppAccessToken() error {
 		return err
 	}
 
-	var atResponse dto.GetAccessTokenResp
+	var atResponse dto2.GetAccessTokenResp
 	err = json.Unmarshal(body, &atResponse)
 	if err != nil {
 		return err
@@ -170,23 +170,23 @@ func (o *OpenApi) Upload(file string) (string, error) {
 }
 
 // UploadFile 本地上传base64图片
-func (o *OpenApi) UploadFile(file string, groupId string) (*dto.RichMediaMsgResp, error) {
+func (o *OpenApi) UploadFile(file string, groupId string) (*dto2.RichMediaMsgResp, error) {
 
 	//encoded, _ := base64.StdEncoding.DecodeString(file)
 	//upload, err := o.Upload(file)
 	//if err != nil {
 	//	return nil, err
 	//}
-	var groupRichMediaMessageToCreate dto.GroupRichMediaMessageToCreate
+	var groupRichMediaMessageToCreate dto2.GroupRichMediaMessageToCreate
 	if IsImageURL(file) {
-		groupRichMediaMessageToCreate = dto.GroupRichMediaMessageToCreate{
+		groupRichMediaMessageToCreate = dto2.GroupRichMediaMessageToCreate{
 			Url:        file,
 			FileType:   1,
 			SrvSendMsg: false,
 		}
 	} else {
 		tmpFile := strings.Replace(file, "base64://", "", -1)
-		groupRichMediaMessageToCreate = dto.GroupRichMediaMessageToCreate{
+		groupRichMediaMessageToCreate = dto2.GroupRichMediaMessageToCreate{
 			FileType:   1,
 			SrvSendMsg: false,
 			FileData:   tmpFile,
@@ -222,7 +222,7 @@ func (o *OpenApi) UploadFile(file string, groupId string) (*dto.RichMediaMsgResp
 	// 读取响应
 	body, _ := io.ReadAll(resp.Body)
 
-	var richMediaMsgResp *dto.RichMediaMsgResp
+	var richMediaMsgResp *dto2.RichMediaMsgResp
 	err = json.Unmarshal(body, &richMediaMsgResp)
 	if err != nil {
 		return nil, err
@@ -232,7 +232,7 @@ func (o *OpenApi) UploadFile(file string, groupId string) (*dto.RichMediaMsgResp
 }
 
 func (o *OpenApi) SendPacket() {
-	for payload := range protocol.OfficialChan {
+	for payload := range protocol.QQOfficialChan {
 		switch payload.MessageType {
 		case onebot.GroupMessage:
 			o.SendGroupMessage(payload)
@@ -269,7 +269,7 @@ func (o *OpenApi) SendGroupMessage(data *onebot.MessageRequest) {
 		return
 	}
 	for _, element := range data.Message {
-		var groupMessageToCreate *dto.GroupMessageToCreate
+		var groupMessageToCreate *dto2.GroupMessageToCreate
 		seq := o.NextAsyncID()
 		if element.ElementType == onebot.TextType {
 			marshal, err := json.Marshal(element.Data)
@@ -287,9 +287,9 @@ func (o *OpenApi) SendGroupMessage(data *onebot.MessageRequest) {
 				continue
 			}
 
-			groupMessageToCreate = &dto.GroupMessageToCreate{
+			groupMessageToCreate = &dto2.GroupMessageToCreate{
 				Content:          text.Text,
-				MsgType:          dto.C2CMsgTypeText,
+				MsgType:          dto2.C2CMsgTypeText,
 				Markdown:         nil,
 				Keyboard:         nil,
 				Media:            nil,
@@ -317,12 +317,12 @@ func (o *OpenApi) SendGroupMessage(data *onebot.MessageRequest) {
 			}
 			logger.Debugf("UploadFile : %+v", file)
 
-			groupMessageToCreate = &dto.GroupMessageToCreate{
+			groupMessageToCreate = &dto2.GroupMessageToCreate{
 				Content:  " ",
-				MsgType:  dto.C2CMsgTypeMedia,
+				MsgType:  dto2.C2CMsgTypeMedia,
 				Markdown: nil,
 				Keyboard: nil,
-				Media: &dto.FileInfo{
+				Media: &dto2.FileInfo{
 					FileInfo: file.FileInfo,
 				},
 				Ark:              nil,
@@ -379,7 +379,7 @@ func (o *OpenApi) SendGroupMessage(data *onebot.MessageRequest) {
 
 }
 
-func (o *OpenApi) GetGuild(guildId string) (*dto.Guild, error) {
+func (o *OpenApi) GetGuild(guildId string) (*dto2.Guild, error) {
 	r, err := http.NewRequest("GET", fmt.Sprintf("%s/guilds/%s", ApiUrl, guildId), nil)
 	if err != nil {
 		logger.Errorf("Error creating request: %v", err)
@@ -403,7 +403,7 @@ func (o *OpenApi) GetGuild(guildId string) (*dto.Guild, error) {
 
 	body, _ := io.ReadAll(resp.Body)
 	logger.Debugf("%v", string(body))
-	var guild *dto.Guild
+	var guild *dto2.Guild
 	err = json.Unmarshal(body, &guild)
 
 	if err != nil {
@@ -414,7 +414,7 @@ func (o *OpenApi) GetGuild(guildId string) (*dto.Guild, error) {
 	return guild, nil
 }
 
-func (o *OpenApi) GetChannel(channelId string) (*dto.Channel, error) {
+func (o *OpenApi) GetChannel(channelId string) (*dto2.Channel, error) {
 	r, err := http.NewRequest("GET", fmt.Sprintf("%s/channels/%s", ApiUrl, channelId), nil)
 	if err != nil {
 		logger.Errorf("Error creating request: %v", err)
@@ -437,7 +437,7 @@ func (o *OpenApi) GetChannel(channelId string) (*dto.Channel, error) {
 
 	body, _ := io.ReadAll(resp.Body)
 	logger.Debugf("%v", string(body))
-	var channel *dto.Channel
+	var channel *dto2.Channel
 	err = json.Unmarshal(body, &channel)
 
 	if err != nil {
