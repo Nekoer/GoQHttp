@@ -13,6 +13,7 @@ type LogConfig struct {
 	FilePath  string
 	AddSource bool
 	JSON      bool
+	Write     bool
 }
 
 var level slog.Leveler
@@ -30,8 +31,22 @@ func Init(config LogConfig) {
 		level = slog.LevelError
 	}
 
-	logfile, _ := os.Open(config.FilePath)
-	outputIO := io.MultiWriter(os.Stdout, bufio.NewWriter(logfile))
+	// 输出目标
+	var writers []io.Writer
+	writers = append(writers, os.Stdout) // 总是输出到控制台
+
+	if config.Write {
+		// ✅ 仅当启用写入文件时才创建文件输出
+		logfile, err := os.OpenFile(config.FilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			// 文件打开失败时，仍然继续运行，只打印警告
+			slog.Warn("failed to open log file", "error", err)
+		} else {
+			writers = append(writers, bufio.NewWriter(logfile))
+		}
+	}
+
+	outputIO := io.MultiWriter(writers...)
 	opts := PrettyHandlerOptions{
 		slog.HandlerOptions{
 			Level:     level,

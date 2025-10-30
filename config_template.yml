@@ -24,6 +24,7 @@ logging:
   file_path: ./webhook.log
   add_source: true
   json: false
+  write: false
 channels:
   - ws-reverse:
       universal: "url"
