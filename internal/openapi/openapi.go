@@ -26,11 +26,24 @@ var ApiUrl = "https://api.sgroup.qq.com"
 
 const SandboxApiUrl = "https://sandbox.api.sgroup.qq.com"
 
-var accessToken string
-var timestamp int64
-var TencentAppId int
-var TencentSecret string
-var asyncId int64
+var (
+	accessToken   string
+	timestamp     int64
+	timer         *time.Timer
+	TencentAppId  int
+	TencentSecret string
+	asyncId       int64
+)
+
+type GetAccessTokenReq struct {
+	AppID        string `json:"appId"`
+	ClientSecret string `json:"clientSecret"`
+}
+
+type GetAccessTokenResp struct {
+	AccessToken string `json:"access_token"`
+	ExpiresIn   string `json:"expires_in"`
+}
 
 func (o *OpenApi) Init(appId int, secret string, sandbox bool) error {
 	TencentAppId = appId
@@ -49,40 +62,69 @@ func (o *OpenApi) Init(appId int, secret string, sandbox bool) error {
 }
 
 func getAppAccessToken() error {
-	atRequest := dto2.GetAccessTokenReq{
+	req := GetAccessTokenReq{
 		AppID:        strconv.Itoa(TencentAppId),
 		ClientSecret: TencentSecret,
 	}
-	data, err := json.Marshal(atRequest)
+
+	data, err := json.Marshal(req)
 	if err != nil {
-		panic(err)
-	}
-	r, err := http.Post("https://bots.qq.com/app/getAppAccessToken", "application/json", bytes.NewBuffer(data))
-	if err != nil {
-		logger.Errorf("获取官Q调用凭证失败 %v", err)
-		return nil
+		return fmt.Errorf("marshal request error: %v", err)
 	}
 
-	body, err := io.ReadAll(r.Body)
+	resp, err := http.Post("https://bots.qq.com/app/getAppAccessToken", "application/json", bytes.NewBuffer(data))
 	if err != nil {
-		return err
+		return fmt.Errorf("http post error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read body error: %v", err)
 	}
 
-	var atResponse dto2.GetAccessTokenResp
-	err = json.Unmarshal(body, &atResponse)
-	if err != nil {
-		return err
+	var result GetAccessTokenResp
+	if err = json.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("unmarshal error: %v", err)
 	}
 
-	accessToken = atResponse.AccessToken
-	expiresIn, err := strconv.Atoi(atResponse.ExpiresIn)
+	accessToken = result.AccessToken
+	expiresIn, err := strconv.Atoi(result.ExpiresIn)
 	if err != nil {
-		return err
+		return fmt.Errorf("parse expires_in error: %v", err)
 	}
 
-	timestamp = int64(expiresIn) + time.Now().Unix()
-	logger.Infof("QQ凭证获取成功: %s", accessToken)
+	// 保存过期时间
+	timestamp = time.Now().Unix() + int64(expiresIn)
+
+	// 打印北京时间
+	expireTime := time.Unix(timestamp, 0).In(time.FixedZone("CST", 8*3600))
+	logger.Infof("[INFO] QQ凭证获取成功: %s", accessToken)
+	logger.Infof("[INFO] 有效期至: %s", expireTime.Format("2006-01-02 15:04:05"))
+
+	// 重新设置定时任务（提前 60 秒刷新）
+	next := expiresIn - 60
+	if next < 60 {
+		next = 60
+	}
+	scheduleRefresh(next)
 	return nil
+}
+
+// 安排下一次刷新
+func scheduleRefresh(seconds int) {
+	if timer != nil {
+		timer.Stop()
+	}
+
+	logger.Infof("下次刷新将在 %d 秒后", seconds)
+	timer = time.AfterFunc(time.Duration(seconds)*time.Second, func() {
+		if err := getAppAccessToken(); err != nil {
+			logger.Errorf("自动刷新失败: %v", err)
+			// 失败时，5分钟后重试
+			scheduleRefresh(300)
+		}
+	})
 }
 
 func (o *OpenApi) NextAsyncID() int64 {
